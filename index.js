@@ -23,6 +23,13 @@ app.use('/api', (req, res, next) => {
   console.log(`➡️ ${req.method} ${req.originalUrl}`);
   next();
 });
+app.use(cors());
+app.use(express.json());
+
+// healthcheck
+app.get('/health', (req, res) => {
+  res.json({ ok: true, uptime: process.uptime() });
+});
 
 // *εδώ προσθέτουμε τον router*
 const landlordsRouter = require('./routes/landlords');
