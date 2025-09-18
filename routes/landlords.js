@@ -1,3 +1,4 @@
+const auth = require('../middleware/auth');
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const Landlord = require('../models/Landlord');
@@ -6,6 +7,7 @@ const {
 } = require('mongoose');
 
 const router = express.Router();
+router.use(auth); // απαιτεί JWT για όλα τα endpoints του router
 
 /**
  * POST /api/landlords
