@@ -7,7 +7,10 @@ const requireAuth = require('../middleware/auth');
 
 const router = express.Router();
 
-// POST /api/auth/signup
+/**
+ * POST /api/auth/signup
+ * Δημιουργία χρήστη
+ */
 router.post('/signup', async (req, res) => {
   try {
     const { name, email, password } = req.body || {};
@@ -28,7 +31,7 @@ router.post('/signup', async (req, res) => {
       id: user.id,
       name: user.name,
       email: user.email,
-      createdAt: user.createdAt.toISOString()
+      createdAt: user.createdAt.toISOString(),
     });
   } catch (err) {
     console.error('signup error:', err);
@@ -36,7 +39,10 @@ router.post('/signup', async (req, res) => {
   }
 });
 
-// POST /api/auth/login
+/**
+ * POST /api/auth/login
+ * Επιστρέφει JWT
+ */
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
@@ -63,11 +69,19 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// GET /api/auth/me (protected)
+/**
+ * GET /api/auth/me (protected)
+ * Επιστρέφει τα στοιχεία του τρέχοντος χρήστη
+ */
 router.get('/me', requireAuth, async (req, res) => {
-  // req.user = { id, email } από το middleware
-  res.json(req.user);
+  try {
+    const user = await User.findById(req.userId).select('_id name email createdAt');
+    if (!user) return res.status(404).json({ error: 'user not found' });
+    return res.json({ user });
+  } catch (err) {
+    console.error('GET /api/auth/me error:', err);
+    return res.status(500).json({ error: 'internal server error' });
+  }
 });
 
 module.exports = router;
-
