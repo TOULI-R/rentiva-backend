@@ -1,75 +1,96 @@
+require('dotenv').config(); // ασφαλιστική δικλείδα
 // routes/properties.js
 const express = require('express');
-const requireAuth = require('../middleware/auth');
-const Property = require('../models/Property');
-
 const router = express.Router();
 
-// Create
-router.post('/', requireAuth, async (req, res) => {
-  try {
-    const { landlordId, title, address, rent, status } = req.body || {};
-    if (!landlordId || !title || !address || rent == null) {
-      return res.status(400).json({ error: 'missing fields' });
+const Property = require('../models/Property');
+const auth = require('../middleware/auth'); // το κανονικό middleware
+const {
+  validateObjectIdParam,
+  requireBody,
+  ensurePositiveNumber,
+} = require('../middleware/validate');
+
+// Αν AUTH_OFF=true, παρακάμπτουμε το auth ΜΟΝΟ για dev
+const maybeAuth = process.env.AUTH_OFF === 'true' ? (req, res, next) => next() : auth;
+
+// CREATE
+router.post(
+  '/',
+  maybeAuth,
+  requireBody(['landlordId', 'title', 'address', 'rent']),
+  ensurePositiveNumber('rent'),
+  async (req, res) => {
+    try {
+      const { landlordId, title, address, rent, status } = req.body;
+      const doc = await Property.create({ landlordId, title, address, rent, status });
+      return res.status(201).json(doc);
+    } catch (err) {
+      return res.status(500).json({ error: 'Create failed', details: err.message });
     }
-    const doc = await Property.create({ landlordId, title, address, rent, status });
-    res.status(201).json(doc);
-  } catch (err) {
-    console.error('POST /api/properties error:', err);
-    res.status(500).json({ error: 'internal server error' });
   }
-});
+);
 
-// List
-router.get('/', requireAuth, async (_req, res) => {
+// LIST (προαιρετικά φίλτρα: status, landlordId)
+router.get('/', maybeAuth, async (req, res) => {
   try {
-    const docs = await Property.find().sort({ createdAt: -1 });
-    res.json(docs);
+    const { status, landlordId } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+    if (landlordId) filter.landlordId = landlordId;
+
+    const docs = await Property.find(filter).sort({ createdAt: -1 });
+    return res.json(docs);
   } catch (err) {
-    console.error('GET /api/properties error:', err);
-    res.status(500).json({ error: 'internal server error' });
+    return res.status(500).json({ error: 'List failed', details: err.message });
   }
 });
 
-// Get by id
-router.get('/:id', requireAuth, async (req, res) => {
+// GET BY ID
+router.get('/:id', maybeAuth, validateObjectIdParam('id'), async (req, res) => {
   try {
     const doc = await Property.findById(req.params.id);
-    if (!doc) return res.status(404).json({ error: 'not found' });
-    res.json(doc);
-  } catch {
-    res.status(400).json({ error: 'invalid id' });
+    if (!doc) return res.status(404).json({ error: 'Property not found' });
+    return res.json(doc);
+  } catch (err) {
+    return res.status(500).json({ error: 'Fetch failed', details: err.message });
   }
 });
 
-// Update
-router.put('/:id', requireAuth, async (req, res) => {
-  try {
-    const { title, address, rent, status } = req.body || {};
-    const doc = await Property.findByIdAndUpdate(
-      req.params.id,
-      { $set: { title, address, rent, status } },
-      { new: true, runValidators: true }
-    );
-    if (!doc) return res.status(404).json({ error: 'not found' });
-    res.json(doc);
-  } catch (err) {
-    console.error('PUT /api/properties/:id error:', err);
-    res.status(500).json({ error: 'internal server error' });
+// UPDATE
+router.put(
+  '/:id',
+  maybeAuth,
+  validateObjectIdParam('id'),
+  ensurePositiveNumber('rent'),
+  async (req, res) => {
+    try {
+      const allowed = ['title', 'address', 'rent', 'status', 'landlordId'];
+      const update = {};
+      for (const k of allowed) {
+        if (Object.prototype.hasOwnProperty.call(req.body, k)) update[k] = req.body[k];
+      }
+      const doc = await Property.findByIdAndUpdate(req.params.id, update, {
+        new: true,
+        runValidators: true,
+      });
+      if (!doc) return res.status(404).json({ error: 'Property not found' });
+      return res.json(doc);
+    } catch (err) {
+      return res.status(500).json({ error: 'Update failed', details: err.message });
+    }
   }
-});
+);
 
-// Delete
-router.delete('/:id', requireAuth, async (req, res) => {
+// DELETE (hard)
+router.delete('/:id', maybeAuth, validateObjectIdParam('id'), async (req, res) => {
   try {
-    const out = await Property.findByIdAndDelete(req.params.id);
-    if (!out) return res.status(404).json({ error: 'not found' });
-    res.json({ ok: true });
+    const doc = await Property.findByIdAndDelete(req.params.id);
+    if (!doc) return res.status(404).json({ error: 'Property not found' });
+    return res.json({ ok: true, id: doc._id });
   } catch (err) {
-    console.error('DELETE /api/properties/:id error:', err);
-    res.status(500).json({ error: 'internal server error' });
+    return res.status(500).json({ error: 'Delete failed', details: err.message });
   }
 });
 
 module.exports = router;
-
