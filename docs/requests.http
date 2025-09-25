@@ -1,18 +1,20 @@
-# AUTH (αν χρειάζεται)
-# Authorization: Bearer {{TOKEN}}
-
-### Create property
-POST http://localhost:5001/api/properties
+### Login
+POST http://localhost:5001/api/auth/login
 Content-Type: application/json
-Authorization: Bearer {{TOKEN}}
 
-{
-  "landlordId": "{{LANDLORD_ID}}",
-  "title": "Apt 401",
-  "address": "Pine 12",
-  "rent": 650
-}
+{ "email":"ELENT@email.com", "password":"1234_password" }
 
 ### List properties
 GET http://localhost:5001/api/properties
+Authorization: Bearer {{TOKEN}}
+
+### Update property
+PUT http://localhost:5001/api/properties/{{ID}}
+Content-Type: application/json
+Authorization: Bearer {{TOKEN}}
+
+{ "title":"Apt 401 - renovated", "rent":700 }
+
+### Delete property
+DELETE http://localhost:5001/api/properties/{{ID}}
 Authorization: Bearer {{TOKEN}}
