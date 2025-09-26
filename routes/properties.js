@@ -4,14 +4,14 @@ const express = require('express');
 const router = express.Router();
 
 const Property = require('../models/Property');
-const auth = require('../middleware/auth'); // το κανονικό middleware
+const auth = require('../middleware/auth');
 const {
   validateObjectIdParam,
   requireBody,
   ensurePositiveNumber,
 } = require('../middleware/validate');
 
-// Dev-bypass αν ποτέ χρειαστεί (βάλε AUTH_OFF=true στο .env)
+// Dev-bypass αν χρειαστεί
 const maybeAuth = process.env.AUTH_OFF === 'true' ? (req, res, next) => next() : auth;
 
 // CREATE
@@ -31,23 +31,69 @@ router.post(
   }
 );
 
-// LIST (φίλτρα: status, landlordId; default exclude deleted)
+// LIST (pagination + search + sort + filters; default exclude deleted)
 router.get('/', maybeAuth, async (req, res) => {
   try {
-    const { status, landlordId, includeDeleted } = req.query;
+    const {
+      page = '1',
+      limit = '10',
+      q,
+      status,
+      landlordId,
+      includeDeleted,
+      sort = 'createdAt',
+      dir = 'desc',
+    } = req.query;
+
+    // φίλτρα
     const filter = {};
-    if (!includeDeleted) filter.isDeleted = { $ne: true }; // δείχνει και τα παλιά χωρίς πεδίο
+    if (!includeDeleted) filter.isDeleted = { $ne: true };
     if (status) filter.status = status;
     if (landlordId) filter.landlordId = landlordId;
+    if (q && q.trim()) {
+      const rx = new RegExp(q.trim(), 'i');
+      filter.$or = [{ title: rx }, { address: rx }];
+    }
 
-    const docs = await Property.find(filter).sort({ createdAt: -1 });
-    return res.json(docs);
+    // ταξινόμηση
+    const direction = dir === 'asc' ? 1 : -1;
+    const sortSpec = { [sort]: direction };
+
+    // pagination
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
+    const skip = (pageNum - 1) * limitNum;
+
+    const [total, data] = await Promise.all([
+      Property.countDocuments(filter),
+      Property.find(filter).sort(sortSpec).skip(skip).limit(limitNum),
+    ]);
+
+    const totalPages = Math.max(Math.ceil(total / limitNum), 1);
+
+    res.json({
+      meta: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+        sort,
+        dir: direction === 1 ? 'asc' : 'desc',
+        q: q || null,
+        filters: {
+          status: status || null,
+          landlordId: landlordId || null,
+          includeDeleted: !!includeDeleted,
+        },
+      },
+      data,
+    });
   } catch (err) {
     return res.status(500).json({ error: 'List failed', details: err.message });
   }
 });
 
-// GET BY ID (κρύβει τα deleted εκτός αν includeDeleted=1)
+// GET BY ID (κρύβει deleted εκτός αν includeDeleted=1)
 router.get('/:id', maybeAuth, validateObjectIdParam('id'), async (req, res) => {
   try {
     const doc = await Property.findById(req.params.id);
@@ -88,7 +134,7 @@ router.put(
   }
 );
 
-// SOFT DELETE -> isDeleted=true, deletedAt=now
+// SOFT DELETE
 router.delete('/:id', maybeAuth, validateObjectIdParam('id'), async (req, res) => {
   try {
     const doc = await Property.findByIdAndUpdate(
@@ -103,7 +149,7 @@ router.delete('/:id', maybeAuth, validateObjectIdParam('id'), async (req, res) =
   }
 });
 
-// RESTORE -> isDeleted=false
+// RESTORE
 router.patch('/:id/restore', maybeAuth, validateObjectIdParam('id'), async (req, res) => {
   try {
     const doc = await Property.findByIdAndUpdate(
