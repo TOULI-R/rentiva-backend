@@ -1,39 +1,59 @@
-require('dotenv').config();
+// index.js
+require('dotenv').config(); // ΠΡΩΤΟ!
+
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 
-const authRouter = require('./routes/auth');
-const landlordsRouter = require('./routes/landlords');
-const propertiesRouter = require('./routes/properties'); // σωστό import
-
-const MONGO_URI = process.env.MONGO_URI;
-if (!MONGO_URI) throw new Error('No MONGO_URI in .env');
-
-mongoose
-  .connect(MONGO_URI)
-  .then(() => console.log('✅ Connected to MongoDB Atlas'))
-  .catch(err => console.error('❌ MongoDB connection error:', err));
-
 const app = express();
-const PORT = process.env.PORT || 5001;
-
-// middlewares
 app.use(cors());
 app.use(express.json());
 
-// debug (προαιρετικό)
-app.use('/api', (req, _res, next) => {
-  console.log(`${req.method} ${req.originalUrl}`);
-  next();
+// προαιρετικό log για sanity
+console.log('[BOOT]', {
+  PORT: process.env.PORT || 5001,
+  AUTH_OFF: process.env.AUTH_OFF,
+  NODE_ENV: process.env.NODE_ENV || 'dev',
 });
 
-// healthcheck
-app.get('/health', (_req, res) => res.json({ ok: true, uptime: process.uptime() }));
+// Σύνδεση Mongo και ΜΕΤΑ routers + listen
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => {
+    console.log('MongoDB connected');
 
-// routers
-app.use('/api/auth', authRouter);
-app.use('/api/landlords', landlordsRouter);
-app.use('/api/properties', propertiesRouter); // ΒΑΛ’ ΤΟ ΕΔΩ
+    // Routers
+    const authRouter = require('./routes/auth');
+    const propertiesRouter = require('./routes/properties');
 
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+    app.use('/api/auth', authRouter);
+    app.use('/api/properties', propertiesRouter);
+
+    // Healthcheck
+    app.get('/api/health', (req, res) => {
+      res.json({
+        ok: true,
+        port: Number(process.env.PORT || 5001),
+        auth_off: process.env.AUTH_OFF === 'true',
+      });
+    });
+
+    // Κεντρικός error handler (ΠΡΕΠΕΙ να μπαίνει στο τέλος)
+    const { notFound, errorHandler } = require('./middleware/errors');
+    app.use(notFound);
+    app.use(errorHandler);
+
+    const PORT = process.env.PORT || 5001;
+    app.listen(PORT, () => {
+      console.log(`API listening on http://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('Mongo connection error:', err.message);
+    process.exit(1);
+  });
+
+// Προαιρετικά: safeguard για απρόβλεπτα promises
+process.on('unhandledRejection', (reason) => {
+  console.error('UNHANDLED REJECTION:', reason);
+});

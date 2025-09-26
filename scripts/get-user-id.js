@@ -1,22 +1,34 @@
+// scripts/seed-user.js
 require('dotenv').config();
 const mongoose = require('mongoose');
-const path = require('path');
-
-const User = require(path.join(process.cwd(), 'models', 'User.js'));
-const Landlord = require(path.join(process.cwd(), 'models', 'Landlord.js'));
+const bcrypt = require('bcryptjs');
+const User = require('../models/User');
 
 (async () => {
   try {
     await mongoose.connect(process.env.MONGO_URI);
-    let u = await User.findOne({}, '_id');
-    if (!u) u = await Landlord.findOne({}, '_id');
+
+    const email = 'ELENT@email.com';
+    const plain = '1234_password';
+
+    let u = await User.findOne({ email });
+
     if (!u) {
-      console.error('NO_USER_OR_LANDLORD');
-      process.exit(2);
+      const passwordHash = await bcrypt.hash(plain, 10);
+      u = await User.create({ name: 'Eleni', email, passwordHash });
+      console.log('Seeded user:', u._id.toString(), u.email);
+    } else {
+      // Αν υπάρχει αλλά ΔΕΝ έχει passwordHash, όρισε/αναβάθμισε
+      if (!u.passwordHash) {
+        u.passwordHash = await bcrypt.hash(plain, 10);
+        await u.save();
+        console.log('Updated existing user with passwordHash:', u._id.toString());
+      } else {
+        console.log('User already ok:', u._id.toString(), u.email);
+      }
     }
-    console.log(u._id.toString());
   } catch (e) {
-    console.error('ERROR', e.message);
+    console.error('Seed error:', e.message);
     process.exit(1);
   } finally {
     await mongoose.disconnect();
