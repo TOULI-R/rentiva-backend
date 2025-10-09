@@ -1,5 +1,4 @@
 // routes/properties.js
-require('dotenv').config();
 const express = require('express');
 const router = express.Router();
 
@@ -11,14 +10,15 @@ const {
   ensurePositiveNumber,
 } = require('../middleware/validate');
 
-// Dev-bypass αν χρειαστεί
-const maybeAuth = process.env.AUTH_OFF === 'true' ? (req, res, next) => next() : auth;
+// Αν το AUTH_OFF='true' παρακάμπτει το auth (dev μόνο)
+const maybeAuth = (req, res, next) =>
+  process.env.AUTH_OFF === 'true' ? next() : auth(req, res, next);
 
-// CREATE
+/* ------------------------- CREATE ------------------------- */
 router.post(
   '/',
   maybeAuth,
-  requireBody(['landlordId', 'title', 'address', 'rent']),
+  requireBody('landlordId', 'title', 'address', 'rent'),
   ensurePositiveNumber('rent'),
   async (req, res) => {
     try {
@@ -31,7 +31,7 @@ router.post(
   }
 );
 
-// LIST (pagination + search + sort + filters; default exclude deleted)
+/* -------------------- LIST (with meta) -------------------- */
 router.get('/', maybeAuth, async (req, res) => {
   try {
     const {
@@ -45,9 +45,10 @@ router.get('/', maybeAuth, async (req, res) => {
       dir = 'desc',
     } = req.query;
 
-    // φίλτρα
     const filter = {};
-    if (!includeDeleted) filter.isDeleted = { $ne: true };
+    const includeDel =
+      includeDeleted === '1' || includeDeleted === 'true' || includeDeleted === true;
+    if (!includeDel) filter.isDeleted = { $ne: true };
     if (status) filter.status = status;
     if (landlordId) filter.landlordId = landlordId;
     if (q && q.trim()) {
@@ -55,11 +56,9 @@ router.get('/', maybeAuth, async (req, res) => {
       filter.$or = [{ title: rx }, { address: rx }];
     }
 
-    // ταξινόμηση
     const direction = dir === 'asc' ? 1 : -1;
     const sortSpec = { [sort]: direction };
 
-    // pagination
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
     const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
     const skip = (pageNum - 1) * limitNum;
@@ -69,22 +68,16 @@ router.get('/', maybeAuth, async (req, res) => {
       Property.find(filter).sort(sortSpec).skip(skip).limit(limitNum),
     ]);
 
-    const totalPages = Math.max(Math.ceil(total / limitNum), 1);
-
-    res.json({
+    return res.json({
       meta: {
         page: pageNum,
         limit: limitNum,
         total,
-        totalPages,
+        totalPages: Math.max(Math.ceil(total / limitNum), 1),
         sort,
         dir: direction === 1 ? 'asc' : 'desc',
         q: q || null,
-        filters: {
-          status: status || null,
-          landlordId: landlordId || null,
-          includeDeleted: !!includeDeleted,
-        },
+        filters: { status: status || null, landlordId: landlordId || null, includeDeleted: includeDel },
       },
       data,
     });
@@ -93,23 +86,26 @@ router.get('/', maybeAuth, async (req, res) => {
   }
 });
 
-// GET BY ID (κρύβει deleted εκτός αν includeDeleted=1)
+/* ------------------------- GET BY ID ---------------------- */
 router.get('/:id', maybeAuth, validateObjectIdParam('id'), async (req, res) => {
   try {
+    const includeDel =
+      req.query.includeDeleted === '1' ||
+      req.query.includeDeleted === 'true' ||
+      req.query.includeDeleted === true;
+
     const doc = await Property.findById(req.params.id);
     if (!doc) return res.status(404).json({ error: 'Property not found' });
-
-    const showDeleted = req.query.includeDeleted == '1' || req.query.includeDeleted === 'true';
-    if (doc.isDeleted && !showDeleted) {
+    if (doc.isDeleted && !includeDel)
       return res.status(404).json({ error: 'Property not found' });
-    }
+
     return res.json(doc);
   } catch (err) {
     return res.status(500).json({ error: 'Fetch failed', details: err.message });
   }
 });
 
-// UPDATE
+/* ------------------------- UPDATE ------------------------ */
 router.put(
   '/:id',
   maybeAuth,
@@ -119,9 +115,8 @@ router.put(
     try {
       const allowed = ['title', 'address', 'rent', 'status', 'landlordId'];
       const update = {};
-      for (const k of allowed) {
-        if (Object.prototype.hasOwnProperty.call(req.body, k)) update[k] = req.body[k];
-      }
+      for (const k of allowed) if (Object.prototype.hasOwnProperty.call(req.body, k)) update[k] = req.body[k];
+
       const doc = await Property.findByIdAndUpdate(req.params.id, update, {
         new: true,
         runValidators: true,
@@ -134,7 +129,7 @@ router.put(
   }
 );
 
-// SOFT DELETE
+/* ------------------------ SOFT DELETE --------------------- */
 router.delete('/:id', maybeAuth, validateObjectIdParam('id'), async (req, res) => {
   try {
     const doc = await Property.findByIdAndUpdate(
@@ -143,13 +138,13 @@ router.delete('/:id', maybeAuth, validateObjectIdParam('id'), async (req, res) =
       { new: true }
     );
     if (!doc) return res.status(404).json({ error: 'Property not found' });
-    return res.json({ ok: true, id: doc._id, isDeleted: doc.isDeleted });
+    return res.json({ ok: true, id: doc._id.toString(), isDeleted: true });
   } catch (err) {
     return res.status(500).json({ error: 'Delete failed', details: err.message });
   }
 });
 
-// RESTORE
+/* ------------------------- RESTORE ------------------------ */
 router.patch('/:id/restore', maybeAuth, validateObjectIdParam('id'), async (req, res) => {
   try {
     const doc = await Property.findByIdAndUpdate(
@@ -158,7 +153,7 @@ router.patch('/:id/restore', maybeAuth, validateObjectIdParam('id'), async (req,
       { new: true }
     );
     if (!doc) return res.status(404).json({ error: 'Property not found' });
-    return res.json(doc);
+    return res.json({ ok: true, id: doc._id.toString(), isDeleted: false });
   } catch (err) {
     return res.status(500).json({ error: 'Restore failed', details: err.message });
   }

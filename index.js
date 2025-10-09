@@ -8,42 +8,40 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
-app.use(express.json());
 
-// ---- CORS allow-list (από .env) ----
-const allowlist = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:3000')
+// --- CORS allowlist από .env (CORS_ORIGINS=origin1,origin2,...) ---
+const allowedOrigins = (process.env.CORS_ORIGINS || '')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
 
-const corsOptions = {
-  origin(origin, cb) {
-    if (!origin) return cb(null, true);            // server-to-server / curl / Postman
-    const ok = allowlist.includes(origin);
-    return cb(null, ok);                            // ok -> βάζει ACAO header, αλλιώς όχι (browser μπλοκ)
-  },
-  credentials: true,
-  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization'],
-};
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
-// ------------------------------------
+app.use(
+  cors({
+    origin(origin, cb) {
+      if (!origin) return cb(null, true); // curl / same-origin
+      if (allowedOrigins.length === 0) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error('CORS not allowed'));
+    },
+  })
+);
+
+app.use(express.json());
 
 // sanity log
 console.log('[BOOT]', {
   PORT: process.env.PORT || 5001,
   AUTH_OFF: process.env.AUTH_OFF,
   NODE_ENV: process.env.NODE_ENV || 'dev',
-  ALLOWLIST: allowlist,
 });
 
+// --- Σύνδεση Mongo και ΜΕΤΑ mount + listen ---
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => {
     console.log('MongoDB connected');
 
-    // --- Security middleware ---
+    // Security middleware
     app.use(helmet());
 
     // Γενικό rate limit (π.χ. 200 req/15m ανά IP)
@@ -72,6 +70,9 @@ mongoose
     app.use('/api/auth', authLimiter, authRouter);
     app.use('/api/properties', propertiesRouter);
 
+    // Root για Render health (200 OK)
+    app.get('/', (req, res) => res.send('ok'));
+
     // Healthcheck
     app.get('/api/health', (req, res) => {
       res.json({
@@ -86,6 +87,7 @@ mongoose
     app.use(notFound);
     app.use(errorHandler);
 
+    // Start server
     const PORT = process.env.PORT || 5001;
     app.listen(PORT, () => {
       console.log(`API listening on http://localhost:${PORT}`);
