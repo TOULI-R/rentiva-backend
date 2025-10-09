@@ -8,14 +8,34 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
-app.use(cors());
 app.use(express.json());
+
+// ---- CORS allow-list (από .env) ----
+const allowlist = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:3000')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+const corsOptions = {
+  origin(origin, cb) {
+    if (!origin) return cb(null, true);            // server-to-server / curl / Postman
+    const ok = allowlist.includes(origin);
+    return cb(null, ok);                            // ok -> βάζει ACAO header, αλλιώς όχι (browser μπλοκ)
+  },
+  credentials: true,
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization'],
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+// ------------------------------------
 
 // sanity log
 console.log('[BOOT]', {
   PORT: process.env.PORT || 5001,
   AUTH_OFF: process.env.AUTH_OFF,
   NODE_ENV: process.env.NODE_ENV || 'dev',
+  ALLOWLIST: allowlist,
 });
 
 mongoose
