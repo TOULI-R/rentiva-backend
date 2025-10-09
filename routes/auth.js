@@ -5,26 +5,33 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const User = require('../models/User');
-const auth = require('../middleware/auth'); // <— Χρειαζόμαστε το middleware
+const auth = require('../middleware/auth'); // <-- Χρειαζόμαστε το middleware για /me
 
 const router = express.Router();
 
-// Health
+// Ping για έλεγχο mount
 router.get('/ping', (req, res) => res.json({ ok: true, scope: 'auth' }));
 
 /**
- * POST /api/auth/login  -> { token }
+ * POST /api/auth/login
+ * body: { email, password }
+ * returns: { token }
  */
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
-    if (!email || !password) return res.status(400).json({ error: 'missing fields' });
+    if (!email || !password) {
+      return res.status(400).json({ error: 'missing fields' });
+    }
 
     const user = await User.findOne({ email });
     if (!user) return res.status(401).json({ error: 'invalid credentials' });
 
+    // Υποστηρίζει παλαιότερες εγγραφές: κοιτά passwordHash, αλλιώς password
     const hash = user.passwordHash || user.password;
-    if (!hash) return res.status(500).json({ error: 'user has no passwordHash set' });
+    if (!hash) {
+      return res.status(500).json({ error: 'user has no passwordHash set' });
+    }
 
     const ok = await bcrypt.compare(password, hash);
     if (!ok) return res.status(401).json({ error: 'invalid credentials' });
@@ -41,13 +48,16 @@ router.post('/login', async (req, res) => {
 });
 
 /**
- * DEV Register  -> { id, email }
+ * DEV register (προαιρετικό)
+ * body: { name, email, password }
+ * αποθηκεύει σε passwordHash
  */
 router.post('/register', async (req, res) => {
   try {
     const { name, email, password } = req.body || {};
-    if (!email || !password) return res.status(400).json({ error: 'missing fields' });
-
+    if (!email || !password) {
+      return res.status(400).json({ error: 'missing fields' });
+    }
     const exists = await User.findOne({ email });
     if (exists) return res.status(409).json({ error: 'email already exists' });
 
@@ -61,14 +71,15 @@ router.post('/register', async (req, res) => {
 });
 
 /**
- * GET /api/auth/me  -> τρέχων χρήστης (ασφαλής προβολή)
+ * GET /api/auth/me
+ * Header: Authorization: Bearer <token>
+ * returns: user public info
  */
 router.get('/me', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.userId)
-      .select('_id name email createdAt updatedAt'); // όχι passwordHash
-    if (!user) return res.status(404).json({ error: 'user not found' });
-    res.json(user);
+    const u = await User.findById(req.userId).select('_id name email createdAt updatedAt');
+    if (!u) return res.status(404).json({ error: 'user not found' });
+    res.json(u);
   } catch (err) {
     res.status(500).json({ error: 'me failed', details: err.message });
   }
