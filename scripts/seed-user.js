@@ -1,38 +1,63 @@
-// scripts/seed-user.js
 require('dotenv').config();
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
-const path = require('path');
 
-// robust import ώστε να μην κολλάει με working dir
-const User = require(path.resolve(__dirname, '../models/User.js'));
+// bcrypt ή bcryptjs (ό,τι υπάρχει)
+let bcrypt;
+try { bcrypt = require('bcrypt'); } catch (e) { bcrypt = require('bcryptjs'); }
 
-(async () => {
-  try {
-    await mongoose.connect(process.env.MONGO_URI);
+async function main() {
+  const email = 'eleni@email.com';
+  const password = '1234_password';
+  const name = 'Eleni';
 
-    const email = 'ELENT@email.com';
-    const plain = '1234_password';
-
-    let u = await User.findOne({ email });
-
-    if (!u) {
-      const passwordHash = await bcrypt.hash(plain, 10);
-      u = await User.create({ name: 'Eleni', email, passwordHash });
-      console.log('Seeded user:', u._id.toString(), u.email);
-    } else {
-      if (!u.passwordHash) {
-        u.passwordHash = await bcrypt.hash(plain, 10);
-        await u.save();
-        console.log('Updated existing user with passwordHash:', u._id.toString());
-      } else {
-        console.log('User already ok:', u._id.toString(), u.email);
-      }
-    }
-  } catch (e) {
-    console.error('Seed error:', e.message);
+  if (!process.env.MONGO_URI) {
+    console.error('❌ MONGO_URI δεν ορίστηκε (.env)');
     process.exit(1);
-  } finally {
-    await mongoose.disconnect();
   }
-})();
+
+  await mongoose.connect(process.env.MONGO_URI);
+  const conn = mongoose.connection;
+  console.log('✅ Συνδέθηκα στη MongoDB:', { db: conn.name });
+
+  // Ελάχιστο schema που ταιριάζει στα περισσότερα setups
+  const UserSchema = new mongoose.Schema(
+    {
+      email: { type: String, index: true, unique: false },
+      emailLower: { type: String, index: true },
+      name: String,
+      passwordHash: String,
+      password: String, // για περιπτώσεις που το backend κοιτάει 'password'
+      role: { type: String, default: 'user' },
+    },
+    { collection: 'users', timestamps: true }
+  );
+
+  const User = mongoose.model('User', UserSchema);
+
+  const hash = await bcrypt.hash(password, 10);
+  const emailLower = email.toLowerCase();
+
+  const res = await User.findOneAndUpdate(
+    { emailLower }, // case-insensitive lookup
+    {
+      $set: {
+        email,
+        emailLower,
+        name,
+        passwordHash: hash,
+        password: hash, // και εδώ hashed για συμβατότητα
+        role: 'user',
+      },
+    },
+    { upsert: true, new: true }
+  );
+
+  console.log('✅ Upserted user:', { id: res._id.toString(), email: res.email });
+  await mongoose.disconnect();
+  console.log('✅ Έγινε!');
+}
+
+main().catch((err) => {
+  console.error('❌ Σφάλμα:', err);
+  process.exit(1);
+});
