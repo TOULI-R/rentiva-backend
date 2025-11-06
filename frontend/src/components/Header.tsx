@@ -1,30 +1,52 @@
-import { useNavigate, NavLink } from "react-router-dom";
+import { useEffect, useState } from "react";
+import api from "../lib/api";
+import { useNavigate, Link } from "react-router-dom";
 
 export default function Header() {
-  const nav = useNavigate();
-  const loggedIn = Boolean(localStorage.getItem("token"));
+  const [email, setEmail] = useState<string>("");
+  const navigate = useNavigate();
 
-  const logout = () => {
-    localStorage.removeItem("token");
-    nav("/login", { replace: true });
+  useEffect(() => {
+    let mounted = true;
+    api
+      .me()
+      .then((u: any) => {
+        if (!mounted) return;
+        setEmail(u?.email || "");
+      })
+      .catch(() => {
+        // αν αποτύχει, αδιαφορούμε εδώ
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const onLogout = () => {
+    api.logout();
+    navigate("/login", { replace: true });
   };
 
   return (
-    <header className="border-b">
-      <div className="app-container py-3 flex items-center justify-between">
-        <NavLink to="/properties" className="font-bold text-lg">
-          Rentiva
-        </NavLink>
-        <nav className="flex items-center gap-3">
-          {loggedIn && (
-            <>
-              <NavLink to="/properties" className="text-sm">Properties</NavLink>
-              <button onClick={logout} className="text-sm border px-3 py-1 rounded">
-                Logout
-              </button>
-            </>
-          )}
-        </nav>
+    <header className="w-full border-b bg-white sticky top-0 z-10">
+      <div className="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between">
+        <Link to="/properties" className="flex items-center gap-2">
+          <span className="text-xl font-bold">Rentiva</span>
+          <span className="text-xs px-2 py-0.5 border rounded-full">alpha</span>
+        </Link>
+        <div className="flex items-center gap-3">
+          {email ? (
+            <span className="text-sm text-gray-600 hidden sm:inline">
+              {email}
+            </span>
+          ) : null}
+          <button
+            onClick={onLogout}
+            className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
+          >
+            Logout
+          </button>
+        </div>
       </div>
     </header>
   );

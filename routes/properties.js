@@ -1,161 +1,97 @@
-// routes/properties.js
 const express = require('express');
 const router = express.Router();
-
 const Property = require('../models/Property');
 const auth = require('../middleware/auth');
-const {
-  validateObjectIdParam,
-  requireBody,
-  ensurePositiveNumber,
-} = require('../middleware/validate');
+const { validateObjectIdParam } = require('../middleware/validate');
 
-// Αν το AUTH_OFF='true' παρακάμπτει το auth (dev μόνο)
-const maybeAuth = (req, res, next) =>
-  process.env.AUTH_OFF === 'true' ? next() : auth(req, res, next);
-
-/* ------------------------- CREATE ------------------------- */
-router.post(
-  '/',
-  maybeAuth,
-  requireBody('landlordId', 'title', 'address', 'rent'),
-  ensurePositiveNumber('rent'),
-  async (req, res) => {
-    try {
-      const { landlordId, title, address, rent, status } = req.body;
-      const doc = await Property.create({ landlordId, title, address, rent, status });
-      return res.status(201).json(doc);
-    } catch (err) {
-      return res.status(500).json({ error: 'Create failed', details: err.message });
-    }
-  }
-);
-
-/* -------------------- LIST (with meta) -------------------- */
-router.get('/', maybeAuth, async (req, res) => {
+// Λίστα properties (με ή χωρίς διαγεγραμμένα)
+router.get('/', auth, async (req, res, next) => {
   try {
-    const {
-      page = '1',
-      limit = '10',
-      q,
-      status,
+    const includeDeleted = req.query.includeDeleted === 'true';
+    const filter = includeDeleted ? {} : { deletedAt: null };
+    const items = await Property.find(filter).sort({ createdAt: -1 });
+    res.json({ items });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Απλό create endpoint για το frontend form
+router.post('/create-simple', auth, async (req, res, next) => {
+  try {
+    const { title, address, price, rent } = req.body;
+
+    if (!title || typeof title !== 'string' || title.trim() === '') {
+      return res.status(400).json({ error: 'title is required' });
+    }
+
+    // Βρες αριθμητικό ενοίκιο από price ή rent
+    let numericRent = null;
+    const candidate =
+      price !== undefined && price !== null && `${price}`.trim() !== ''
+        ? price
+        : rent;
+
+    if (candidate !== undefined && candidate !== null && `${candidate}`.trim() !== '') {
+      const n = Number(candidate);
+      if (Number.isNaN(n) || n < 0) {
+        return res.status(400).json({ error: 'rent must be a number >= 0' });
+      }
+      numericRent = n;
+    }
+
+    // landlordId από ένα ήδη υπάρχον property (π.χ. seeded Apt 401)
+    const base = await Property.findOne().sort({ createdAt: 1 }).lean();
+    const landlordId = base ? base.landlordId : null;
+
+    const doc = new Property({
+      title: title.trim(),
+      address: address && typeof address === 'string' ? address.trim() : address,
+      rent: numericRent,
+      price: numericRent,
       landlordId,
-      includeDeleted,
-      sort = 'createdAt',
-      dir = 'desc',
-    } = req.query;
-
-    const filter = {};
-    const includeDel =
-      includeDeleted === '1' || includeDeleted === 'true' || includeDeleted === true;
-    if (!includeDel) filter.isDeleted = { $ne: true };
-    if (status) filter.status = status;
-    if (landlordId) filter.landlordId = landlordId;
-    if (q && q.trim()) {
-      const rx = new RegExp(q.trim(), 'i');
-      filter.$or = [{ title: rx }, { address: rx }];
-    }
-
-    const direction = dir === 'asc' ? 1 : -1;
-    const sortSpec = { [sort]: direction };
-
-    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
-    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
-    const skip = (pageNum - 1) * limitNum;
-
-    const [total, data] = await Promise.all([
-      Property.countDocuments(filter),
-      Property.find(filter).sort(sortSpec).skip(skip).limit(limitNum),
-    ]);
-
-    return res.json({
-      meta: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages: Math.max(Math.ceil(total / limitNum), 1),
-        sort,
-        dir: direction === 1 ? 'asc' : 'desc',
-        q: q || null,
-        filters: { status: status || null, landlordId: landlordId || null, includeDeleted: includeDel },
-      },
-      data,
     });
+
+    await doc.save();
+    res.status(201).json(doc);
   } catch (err) {
-    return res.status(500).json({ error: 'List failed', details: err.message });
+    next(err);
   }
 });
 
-/* ------------------------- GET BY ID ---------------------- */
-router.get('/:id', maybeAuth, validateObjectIdParam('id'), async (req, res) => {
+// Soft delete (θέτει deletedAt)
+router.delete('/:id', auth, validateObjectIdParam('id'), async (req, res, next) => {
   try {
-    const includeDel =
-      req.query.includeDeleted === '1' ||
-      req.query.includeDeleted === 'true' ||
-      req.query.includeDeleted === true;
-
-    const doc = await Property.findById(req.params.id);
-    if (!doc) return res.status(404).json({ error: 'Property not found' });
-    if (doc.isDeleted && !includeDel)
-      return res.status(404).json({ error: 'Property not found' });
-
-    return res.json(doc);
-  } catch (err) {
-    return res.status(500).json({ error: 'Fetch failed', details: err.message });
-  }
-});
-
-/* ------------------------- UPDATE ------------------------ */
-router.put(
-  '/:id',
-  maybeAuth,
-  validateObjectIdParam('id'),
-  ensurePositiveNumber('rent'),
-  async (req, res) => {
-    try {
-      const allowed = ['title', 'address', 'rent', 'status', 'landlordId'];
-      const update = {};
-      for (const k of allowed) if (Object.prototype.hasOwnProperty.call(req.body, k)) update[k] = req.body[k];
-
-      const doc = await Property.findByIdAndUpdate(req.params.id, update, {
-        new: true,
-        runValidators: true,
-      });
-      if (!doc) return res.status(404).json({ error: 'Property not found' });
-      return res.json(doc);
-    } catch (err) {
-      return res.status(500).json({ error: 'Update failed', details: err.message });
+    const { id } = req.params;
+    const property = await Property.findByIdAndUpdate(
+      id,
+      { $set: { deletedAt: new Date() } },
+      { new: true }
+    );
+    if (!property) {
+      return res.status(404).json({ error: 'Not found' });
     }
-  }
-);
-
-/* ------------------------ SOFT DELETE --------------------- */
-router.delete('/:id', maybeAuth, validateObjectIdParam('id'), async (req, res) => {
-  try {
-    const doc = await Property.findByIdAndUpdate(
-      req.params.id,
-      { isDeleted: true, deletedAt: new Date() },
-      { new: true }
-    );
-    if (!doc) return res.status(404).json({ error: 'Property not found' });
-    return res.json({ ok: true, id: doc._id.toString(), isDeleted: true });
+    res.json(property);
   } catch (err) {
-    return res.status(500).json({ error: 'Delete failed', details: err.message });
+    next(err);
   }
 });
 
-/* ------------------------- RESTORE ------------------------ */
-router.patch('/:id/restore', maybeAuth, validateObjectIdParam('id'), async (req, res) => {
+// Restore soft-deleted (deletedAt = null)
+router.post('/:id/restore', auth, validateObjectIdParam('id'), async (req, res, next) => {
   try {
-    const doc = await Property.findByIdAndUpdate(
-      req.params.id,
-      { isDeleted: false, deletedAt: null },
+    const { id } = req.params;
+    const property = await Property.findByIdAndUpdate(
+      id,
+      { $set: { deletedAt: null } },
       { new: true }
     );
-    if (!doc) return res.status(404).json({ error: 'Property not found' });
-    return res.json({ ok: true, id: doc._id.toString(), isDeleted: false });
+    if (!property) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    res.json(property);
   } catch (err) {
-    return res.status(500).json({ error: 'Restore failed', details: err.message });
+    next(err);
   }
 });
 

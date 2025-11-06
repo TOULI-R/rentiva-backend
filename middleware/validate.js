@@ -1,4 +1,3 @@
-// middleware/validate.js
 const mongoose = require('mongoose');
 
 const validateObjectIdParam = (param = 'id') => (req, res, next) => {
@@ -9,10 +8,18 @@ const validateObjectIdParam = (param = 'id') => (req, res, next) => {
   next();
 };
 
-const requireBody = (fields = []) => (req, res, next) => {
-  for (const f of fields) {
+// Accepts either requireBody('a', 'b') or requireBody(['a','b'])
+const requireBody = (...fields) => (req, res, next) => {
+  const list =
+    Array.isArray(fields[0]) && fields.length === 1 ? fields[0] : fields;
+
+  for (const f of list) {
     const v = req.body[f];
-    if (v === undefined || v === null || (typeof v === 'string' && v.trim() === '')) {
+    if (
+      v === undefined ||
+      v === null ||
+      (typeof v === 'string' && v.trim() === '')
+    ) {
       return res.status(400).json({ error: `Missing or empty field: ${f}` });
     }
   }
@@ -23,7 +30,9 @@ const ensurePositiveNumber = (field) => (req, res, next) => {
   if (req.body[field] !== undefined) {
     const n = req.body[field];
     if (typeof n !== 'number' || Number.isNaN(n) || n < 0) {
-      return res.status(400).json({ error: `${field} must be a number >= 0` });
+      return res
+        .status(400)
+        .json({ error: `${field} must be a number >= 0` });
     }
   }
   next();
