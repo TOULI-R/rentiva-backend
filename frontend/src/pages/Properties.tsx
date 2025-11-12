@@ -6,18 +6,17 @@ interface Property {
   _id: string;
   title?: string;
   address?: string;
-  rent?: number;
+  rent?: number;          // δουλεύουμε με rent από το backend
+  price?: number;         // κρατάμε και price για συμβατότητα
   deletedAt?: string | null;
-  isDeleted?: boolean;
 }
 
 function normalizeProperties(res: any): Property[] {
   if (!res) return [];
-  let arr: any[] = [];
-  if (Array.isArray(res)) arr = res;
-  else if (Array.isArray(res.items)) arr = res.items;
-  else if (Array.isArray(res.data)) arr = res.data;
-  return arr as Property[];
+  if (Array.isArray(res)) return res as Property[];
+  if (Array.isArray(res.items)) return res.items as Property[];
+  if (Array.isArray(res.data)) return res.data as Property[];
+  return [];
 }
 
 export default function Properties() {
@@ -29,7 +28,13 @@ export default function Properties() {
 
   const [newTitle, setNewTitle] = useState("");
   const [newAddress, setNewAddress] = useState("");
-  const [newRent, setNewRent] = useState("");
+  const [newPrice, setNewPrice] = useState("");
+
+  // edit state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editPrice, setEditPrice] = useState("");
 
   const fetchList = async () => {
     setLoading(true);
@@ -52,45 +57,108 @@ export default function Properties() {
   const onDelete = async (id: string) => {
     if (!confirm("Να γίνει soft delete;")) return;
     try {
+      setErr(null);
       await api.delProperty(id);
       fetchList();
     } catch (e: any) {
-      alert(e?.message || "Αποτυχία διαγραφής.");
+      setErr(e?.message || "Αποτυχία διαγραφής.");
     }
   };
 
   const onRestore = async (id: string) => {
     try {
+      setErr(null);
       await api.restoreProperty(id);
       fetchList();
     } catch (e: any) {
-      alert(e?.message || "Αποτυχία restore.");
+      setErr(e?.message || "Αποτυχία restore.");
     }
   };
 
   const onAdd = async () => {
     if (!newTitle.trim()) {
-      alert("Ο τίτλος είναι υποχρεωτικός.");
+      setErr("Ο τίτλος είναι υποχρεωτικός.");
       return;
     }
-    const rentNumber =
-      newRent.trim() === "" ? undefined : Number(newRent.trim());
-    if (rentNumber !== undefined && Number.isNaN(rentNumber)) {
-      alert("Η τιμή πρέπει να είναι αριθμός.");
+
+    const priceNumber =
+      newPrice.trim() === "" ? undefined : Number(newPrice.trim());
+
+    if (priceNumber !== undefined && Number.isNaN(priceNumber)) {
+      setErr("Η τιμή πρέπει να είναι αριθμός.");
       return;
     }
+
     try {
+      setErr(null);
       await api.createProperty({
         title: newTitle.trim(),
         address: newAddress.trim() || undefined,
-        rent: rentNumber,
+        rent: priceNumber,
+        price: priceNumber,
       });
       setNewTitle("");
       setNewAddress("");
-      setNewRent("");
+      setNewPrice("");
       fetchList();
     } catch (e: any) {
-      alert(e?.message || "Αποτυχία δημιουργίας.");
+      setErr(e?.message || "Αποτυχία δημιουργίας.");
+    }
+  };
+
+  const startEdit = (p: Property) => {
+    setErr(null);
+    setEditingId(p._id);
+    setEditTitle(p.title || "");
+    setEditAddress(p.address || "");
+    const baseRent =
+      typeof p.rent === "number"
+        ? p.rent
+        : typeof p.price === "number"
+        ? p.price
+        : undefined;
+    setEditPrice(
+      baseRent !== undefined && !Number.isNaN(baseRent)
+        ? String(baseRent)
+        : ""
+    );
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditTitle("");
+    setEditAddress("");
+    setEditPrice("");
+  };
+
+  const saveEdit = async () => {
+    if (!editingId) return;
+
+    if (!editTitle.trim()) {
+      setErr("Ο τίτλος είναι υποχρεωτικός.");
+      return;
+    }
+
+    const priceNumber =
+      editPrice.trim() === "" ? undefined : Number(editPrice.trim());
+
+    if (priceNumber !== undefined && Number.isNaN(priceNumber)) {
+      setErr("Η τιμή πρέπει να είναι αριθμός.");
+      return;
+    }
+
+    try {
+      setErr(null);
+      await api.updateProperty(editingId, {
+        title: editTitle.trim(),
+        address: editAddress.trim() || undefined,
+        rent: priceNumber,
+        price: priceNumber,
+      });
+      cancelEdit();
+      fetchList();
+    } catch (e: any) {
+      setErr(e?.message || "Αποτυχία ενημέρωσης.");
     }
   };
 
@@ -137,8 +205,8 @@ export default function Properties() {
               Ενοίκιο (€)
               <input
                 className="mt-1 w-full border rounded-xl px-3 py-2"
-                value={newRent}
-                onChange={(e) => setNewRent(e.target.value)}
+                value={newPrice}
+                onChange={(e) => setNewPrice(e.target.value)}
                 placeholder="700"
               />
             </label>
@@ -180,7 +248,7 @@ export default function Properties() {
         </section>
 
         {err && (
-          <div className="mb-4 text-sm text-red-600 border border-red-200 bg-red-50 px-3 py-2 rounded-lg">
+          <div className="mb-2 text-sm text-red-700 border border-red-200 bg-red-50 px-3 py-2 rounded-lg">
             {err}
           </div>
         )}
@@ -203,18 +271,57 @@ export default function Properties() {
                   <th className="px-4 py-3">Διεύθυνση</th>
                   <th className="px-4 py-3">Ενοίκιο</th>
                   <th className="px-4 py-3">Κατάσταση</th>
-                  <th className="px-4 py-3"></th>
+                  <th className="px-4 py-3 text-right">Ενέργειες</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((p) => {
-                  const isDeleted = !!p.deletedAt || p.isDeleted;
+                  const isDeleted = !!p.deletedAt;
+                  const isEditing = editingId === p._id && !isDeleted;
+
+                  const rentValue =
+                    typeof p.rent === "number"
+                      ? p.rent
+                      : typeof p.price === "number"
+                      ? p.price
+                      : undefined;
+
                   return (
                     <tr key={p._id} className="border-t">
-                      <td className="px-4 py-3">{p.title || "-"}</td>
-                      <td className="px-4 py-3">{p.address || "-"}</td>
                       <td className="px-4 py-3">
-                        {typeof p.rent === "number" ? `${p.rent}€` : "-"}
+                        {isEditing ? (
+                          <input
+                            className="w-full border rounded-xl px-2 py-1 text-sm"
+                            value={editTitle}
+                            onChange={(e) => setEditTitle(e.target.value)}
+                          />
+                        ) : (
+                          p.title || "-"
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <input
+                            className="w-full border rounded-xl px-2 py-1 text-sm"
+                            value={editAddress}
+                            onChange={(e) => setEditAddress(e.target.value)}
+                          />
+                        ) : (
+                          p.address || "-"
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <input
+                            className="w-24 border rounded-xl px-2 py-1 text-sm"
+                            value={editPrice}
+                            onChange={(e) => setEditPrice(e.target.value)}
+                          />
+                        ) : rentValue !== undefined ? (
+                          `${rentValue}€`
+                        ) : (
+                          "-"
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         {isDeleted ? (
@@ -227,7 +334,7 @@ export default function Properties() {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-right space-x-2">
                         {isDeleted ? (
                           <button
                             className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
@@ -235,13 +342,36 @@ export default function Properties() {
                           >
                             Restore
                           </button>
+                        ) : isEditing ? (
+                          <>
+                            <button
+                              className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
+                              onClick={saveEdit}
+                            >
+                              Save
+                            </button>
+                            <button
+                              className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
+                              onClick={cancelEdit}
+                            >
+                              Cancel
+                            </button>
+                          </>
                         ) : (
-                          <button
-                            className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
-                            onClick={() => onDelete(p._id)}
-                          >
-                            Soft delete
-                          </button>
+                          <>
+                            <button
+                              className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
+                              onClick={() => startEdit(p)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
+                              onClick={() => onDelete(p._id)}
+                            >
+                              Soft delete
+                            </button>
+                          </>
                         )}
                       </td>
                     </tr>

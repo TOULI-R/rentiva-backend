@@ -19,6 +19,10 @@ async function request<T = any>(path: string, options: RequestInit = {}): Promis
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
 
   if (res.status === 401) {
+    storage.clearToken();
+    if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+      window.location.href = "/login";
+    }
     throw new Error("UNAUTHORIZED");
   }
 
@@ -65,6 +69,15 @@ const createProperty = (data: {
     body: JSON.stringify(data),
   });
 
+const updateProperty = (
+  id: string,
+  data: { title?: string; address?: string; price?: number; rent?: number }
+) =>
+  request(`/properties/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+
 const delProperty = (id: string) =>
   request(`/properties/${id}`, { method: "DELETE" });
 
@@ -80,6 +93,7 @@ const api = {
   me,
   listProperties,
   createProperty,
+  updateProperty,
   delProperty,
   restoreProperty,
   logout,

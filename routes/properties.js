@@ -59,6 +59,64 @@ router.post('/create-simple', auth, async (req, res, next) => {
   }
 });
 
+// Update property (τίτλος / διεύθυνση / ενοίκιο)
+router.put('/:id', auth, validateObjectIdParam('id'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { title, address, price, rent } = req.body;
+
+    const update = {};
+
+    if (title !== undefined) {
+      if (!title || typeof title !== 'string' || title.trim() === '') {
+        return res.status(400).json({ error: 'title is required' });
+      }
+      update.title = title.trim();
+    }
+
+    if (address !== undefined) {
+      if (typeof address === 'string') {
+        update.address = address.trim();
+      } else {
+        update.address = address;
+      }
+    }
+
+    if (price !== undefined || rent !== undefined) {
+      const candidate =
+        price !== undefined && price !== null && `${price}`.trim() !== ''
+          ? price
+          : rent;
+
+      if (candidate !== undefined && candidate !== null && `${candidate}`.trim() !== '') {
+        const n = Number(candidate);
+        if (Number.isNaN(n) || n < 0) {
+          return res.status(400).json({ error: 'rent must be a number >= 0' });
+        }
+        update.rent = n;
+        update.price = n;
+      } else {
+        update.rent = null;
+        update.price = null;
+      }
+    }
+
+    const property = await Property.findByIdAndUpdate(
+      id,
+      { $set: update },
+      { new: true }
+    );
+
+    if (!property) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    res.json(property);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Soft delete (θέτει deletedAt)
 router.delete('/:id', auth, validateObjectIdParam('id'), async (req, res, next) => {
   try {
