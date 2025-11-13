@@ -1,22 +1,30 @@
-import type { ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Properties from "./pages/Properties";
-import Header from "./components/Header";
-import "./index.css";
+import { storage } from "./lib/api";
 
-function RequireAuth({ children }: { children: ReactNode }) {
-  const token = localStorage.getItem("token");
-  if (!token) return <Navigate to="/login" replace />;
-  return <>{children}</>;
+type RequireAuthProps = {
+  children: JSX.Element;
+};
+
+function RequireAuth({ children }: RequireAuthProps) {
+  const token = storage.getToken();
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
 }
 
 export default function App() {
+  const token = storage.getToken();
+
   return (
     <BrowserRouter>
-      <Header />
       <Routes>
-        <Route path="/login" element={<Login />} />
+        <Route
+          path="/login"
+          element={token ? <Navigate to="/properties" replace /> : <Login />}
+        />
         <Route
           path="/properties"
           element={
