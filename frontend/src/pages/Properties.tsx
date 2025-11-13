@@ -6,8 +6,8 @@ interface Property {
   _id: string;
   title?: string;
   address?: string;
-  rent?: number;          // δουλεύουμε με rent από το backend
-  price?: number;         // κρατάμε και price για συμβατότητα
+  rent?: number;          // backend πεδίο
+  price?: number;         // fallback συμβατότητας
   deletedAt?: string | null;
 }
 
@@ -17,6 +17,12 @@ function normalizeProperties(res: any): Property[] {
   if (Array.isArray(res.items)) return res.items as Property[];
   if (Array.isArray(res.data)) return res.data as Property[];
   return [];
+}
+
+function rentOf(p: Property): number | undefined {
+  if (typeof p.rent === "number") return p.rent;
+  if (typeof p.price === "number") return p.price;
+  return undefined;
 }
 
 export default function Properties() {
@@ -35,6 +41,10 @@ export default function Properties() {
   const [editTitle, setEditTitle] = useState("");
   const [editAddress, setEditAddress] = useState("");
   const [editPrice, setEditPrice] = useState("");
+
+  // sort state
+  const [sortKey, setSortKey] = useState<"title" | "rent">("title");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const fetchList = async () => {
     setLoading(true);
@@ -111,16 +121,9 @@ export default function Properties() {
     setEditingId(p._id);
     setEditTitle(p.title || "");
     setEditAddress(p.address || "");
-    const baseRent =
-      typeof p.rent === "number"
-        ? p.rent
-        : typeof p.price === "number"
-        ? p.price
-        : undefined;
+    const baseRent = rentOf(p);
     setEditPrice(
-      baseRent !== undefined && !Number.isNaN(baseRent)
-        ? String(baseRent)
-        : ""
+      baseRent !== undefined && !Number.isNaN(baseRent) ? String(baseRent) : ""
     );
   };
 
@@ -162,6 +165,7 @@ export default function Properties() {
     }
   };
 
+  // Φίλτρο
   const filtered = useMemo(() => {
     if (!q.trim()) return items;
     const needle = q.trim().toLowerCase();
@@ -171,6 +175,46 @@ export default function Properties() {
         p.address?.toLowerCase().includes(needle)
     );
   }, [items, q]);
+
+  // Ταξινόμηση
+  const sorted = useMemo(() => {
+    const arr = filtered.slice();
+    arr.sort((a, b) => {
+      const dir = sortDir === "asc" ? 1 : -1;
+      if (sortKey === "title") {
+        const av = (a.title || "").toLowerCase();
+        const bv = (b.title || "").toLowerCase();
+        return av.localeCompare(bv) * dir;
+      }
+      // rent
+      const ar =
+        rentOf(a) !== undefined
+          ? (rentOf(a) as number)
+          : sortDir === "asc"
+          ? Number.POSITIVE_INFINITY
+          : Number.NEGATIVE_INFINITY;
+      const br =
+        rentOf(b) !== undefined
+          ? (rentOf(b) as number)
+          : sortDir === "asc"
+          ? Number.POSITIVE_INFINITY
+          : Number.NEGATIVE_INFINITY;
+      return (ar - br) * dir;
+    });
+    return arr;
+  }, [filtered, sortKey, sortDir]);
+
+  const toggleSort = (key: "title" | "rent") => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const sortArrow = (key: "title" | "rent") =>
+    sortKey === key ? (sortDir === "asc" ? "↑" : "↓") : "↕";
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -220,7 +264,7 @@ export default function Properties() {
           </button>
         </section>
 
-        {/* Search + filters */}
+        {/* Search + filters + counter */}
         <section className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
           <h2 className="text-xl font-semibold">Properties</h2>
           <div className="flex items-center gap-3">
@@ -247,6 +291,11 @@ export default function Properties() {
           </div>
         </section>
 
+        <p className="text-sm text-gray-600">
+          Εγγραφές: {sorted.length}
+          {sorted.length !== items.length ? ` (από ${items.length} συνολικά)` : ""}
+        </p>
+
         {err && (
           <div className="mb-2 text-sm text-red-700 border border-red-200 bg-red-50 px-3 py-2 rounded-lg">
             {err}
@@ -267,24 +316,34 @@ export default function Properties() {
             <table className="min-w-full bg-white rounded-xl shadow">
               <thead>
                 <tr className="text-left text-sm text-gray-600">
-                  <th className="px-4 py-3">Τίτλος</th>
+                  <th className="px-4 py-3">
+                    <button
+                      className="hover:underline"
+                      onClick={() => toggleSort("title")}
+                      title="Ταξινόμηση κατά τίτλο"
+                    >
+                      Τίτλος {sortArrow("title")}
+                    </button>
+                  </th>
                   <th className="px-4 py-3">Διεύθυνση</th>
-                  <th className="px-4 py-3">Ενοίκιο</th>
+                  <th className="px-4 py-3">
+                    <button
+                      className="hover:underline"
+                      onClick={() => toggleSort("rent")}
+                      title="Ταξινόμηση κατά ενοίκιο"
+                    >
+                      Ενοίκιο {sortArrow("rent")}
+                    </button>
+                  </th>
                   <th className="px-4 py-3">Κατάσταση</th>
                   <th className="px-4 py-3 text-right">Ενέργειες</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((p) => {
+                {sorted.map((p) => {
                   const isDeleted = !!p.deletedAt;
                   const isEditing = editingId === p._id && !isDeleted;
-
-                  const rentValue =
-                    typeof p.rent === "number"
-                      ? p.rent
-                      : typeof p.price === "number"
-                      ? p.price
-                      : undefined;
+                  const rentValue = rentOf(p);
 
                   return (
                     <tr key={p._id} className="border-t">
@@ -377,7 +436,7 @@ export default function Properties() {
                     </tr>
                   );
                 })}
-                {filtered.length === 0 && (
+                {sorted.length === 0 && (
                   <tr>
                     <td
                       colSpan={5}
