@@ -1,4 +1,4 @@
-const BASE = import.meta.env.VITE_API_BASE as string;
+const BASE = import.meta.env.VITE_API_BASE || "http://localhost:5001/api";
 const TOKEN_KEY = "rentiva_token";
 
 export const storage = {
@@ -10,94 +10,72 @@ export const storage = {
 async function request<T = any>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...(options.headers as Record<string, string> | undefined),
+    ...(options.headers as Record<string, string> || {}),
   };
-
   const token = storage.getToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
-
-  if (res.status === 401) {
-    storage.clearToken();
-    if (typeof window !== "undefined" && window.location.pathname !== "/login") {
-      window.location.href = "/login";
-    }
-    throw new Error("UNAUTHORIZED");
-  }
+  const text = await res.text();
+  let data: any = null;
+  try { data = text ? JSON.parse(text) : null; } catch { /* noop */ }
 
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `HTTP ${res.status}`);
+    const msg = (data && (data.error || data.message)) || res.statusText || "Request failed";
+    throw new Error(msg);
   }
-
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  return data as T;
 }
 
-// ------- API methods -------
-
-async function login(email: string, password: string) {
-  const payload = await request<{ token: string; user: any }>("/auth/login", {
-    method: "POST",
-    body: JSON.stringify({
-      email: email.trim().toLowerCase(),
-      password,
-    }),
-  });
-  if (payload?.token) storage.setToken(payload.token);
-  return payload;
-}
-
-const me = () => request<any>("/auth/me");
-
-const listProperties = (opts?: { includeDeleted?: boolean }) => {
-  const qs = new URLSearchParams();
-  if (opts?.includeDeleted) qs.set("includeDeleted", "true");
-  const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  return request(`/properties${suffix}`);
-};
-
-const createProperty = (data: {
+export type Property = {
+  _id: string;
   title: string;
   address?: string;
-  price?: number;
   rent?: number;
-}) =>
-  request("/properties/create-simple", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-
-const updateProperty = (
-  id: string,
-  data: { title?: string; address?: string; price?: number; rent?: number }
-) =>
-  request(`/properties/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(data),
-  });
-
-const delProperty = (id: string) =>
-  request(`/properties/${id}`, { method: "DELETE" });
-
-const restoreProperty = (id: string) =>
-  request(`/properties/${id}/restore`, { method: "POST" });
-
-const logout = () => {
-  storage.clearToken();
+  deletedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
-const api = {
-  login,
-  me,
-  listProperties,
-  createProperty,
-  updateProperty,
-  delProperty,
-  restoreProperty,
-  logout,
+export type PropertiesPage = {
+  items: Property[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export const login = (email: string, password: string) =>
+  request<{ token: string }>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+
+export const me = () => request<{ id: string; email: string; name?: string }>("/auth/me");
+
+export const listProperties = (params: {
+  page?: number; pageSize?: number; includeDeleted?: boolean; q?: string;
+} = {}) => {
+  const usp = new URLSearchParams();
+  if (params.page) usp.set("page", String(params.page));
+  if (params.pageSize) usp.set("pageSize", String(params.pageSize));
+  if (params.includeDeleted) usp.set("includeDeleted", "true");
+  if (params.q && params.q.trim()) usp.set("q", params.q.trim());
+  const qs = usp.toString();
+  return request<PropertiesPage | Property[]>(`/properties${qs ? `?${qs}` : ""}`);
+};
+
+export const createProperty = (payload: { title: string; address?: string; rent?: number }) =>
+  request<Property>("/properties", { method: "POST", body: JSON.stringify(payload) });
+
+export const updateRent = (id: string, rent: number) =>
+  request<Property>(`/properties/${id}`, { method: "PATCH", body: JSON.stringify({ rent }) });
+
+export const delProperty = (id: string) =>
+  request<{ ok: true }>(`/properties/${id}`, { method: "DELETE" });
+
+export const restoreProperty = (id: string) =>
+  request<Property>(`/properties/${id}/restore`, { method: "PATCH" });
+
+export default {
   storage,
+  login, me,
+  listProperties, createProperty, updateRent,
+  delProperty, restoreProperty,
 };
-
-export default api;
