@@ -1,156 +1,77 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Property = require('../models/Property');
-const auth = require('../middleware/auth');
-const { validateObjectIdParam } = require('../middleware/validate');
+const { validateObjectIdParam, requireBody } = require('../middleware/validate');
 
-// Λίστα properties (με ή χωρίς διαγεγραμμένα)
-router.get('/', auth, async (req, res, next) => {
+// Λίστα με pagination, αναζήτηση, includeDeleted
+router.get('/', async (req, res, next) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(50, Math.max(1, parseInt(req.query.pageSize, 10) || 10));
     const includeDeleted = req.query.includeDeleted === 'true';
-    const filter = includeDeleted ? {} : { deletedAt: null };
-    const items = await Property.find(filter).sort({ createdAt: -1 });
-    res.json({ items });
-  } catch (err) {
-    next(err);
-  }
+    const q = (req.query.q || '').toString().trim();
+
+    const filter = {};
+    if (!includeDeleted) filter.deletedAt = null;
+    if (q) {
+      filter.$or = [
+        { title:   { $regex: q, $options: 'i' } },
+        { address: { $regex: q, $options: 'i' } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      Property.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize),
+      Property.countDocuments(filter),
+    ]);
+
+    res.json({ items, total, page, pageSize });
+  } catch (e) { next(e); }
 });
 
-// Απλό create endpoint για το frontend form
-router.post('/create-simple', auth, async (req, res, next) => {
+// Soft delete
+router.delete('/:id', validateObjectIdParam('id'), async (req, res, next) => {
   try {
-    const { title, address, price, rent } = req.body;
-
-    if (!title || typeof title !== 'string' || title.trim() === '') {
-      return res.status(400).json({ error: 'title is required' });
-    }
-
-    // Βρες αριθμητικό ενοίκιο από price ή rent
-    let numericRent = null;
-    const candidate =
-      price !== undefined && price !== null && `${price}`.trim() !== ''
-        ? price
-        : rent;
-
-    if (candidate !== undefined && candidate !== null && `${candidate}`.trim() !== '') {
-      const n = Number(candidate);
-      if (Number.isNaN(n) || n < 0) {
-        return res.status(400).json({ error: 'rent must be a number >= 0' });
-      }
-      numericRent = n;
-    }
-
-    // landlordId από ένα ήδη υπάρχον property (π.χ. seeded Apt 401)
-    const base = await Property.findOne().sort({ createdAt: 1 }).lean();
-    const landlordId = base ? base.landlordId : null;
-
-    const doc = new Property({
-      title: title.trim(),
-      address: address && typeof address === 'string' ? address.trim() : address,
-      rent: numericRent,
-      price: numericRent,
-      landlordId,
-    });
-
-    await doc.save();
-    res.status(201).json(doc);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Update property (τίτλος / διεύθυνση / ενοίκιο)
-router.put('/:id', auth, validateObjectIdParam('id'), async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const { title, address, price, rent } = req.body;
-
-    const update = {};
-
-    if (title !== undefined) {
-      if (!title || typeof title !== 'string' || title.trim() === '') {
-        return res.status(400).json({ error: 'title is required' });
-      }
-      update.title = title.trim();
-    }
-
-    if (address !== undefined) {
-      if (typeof address === 'string') {
-        update.address = address.trim();
-      } else {
-        update.address = address;
-      }
-    }
-
-    if (price !== undefined || rent !== undefined) {
-      const candidate =
-        price !== undefined && price !== null && `${price}`.trim() !== ''
-          ? price
-          : rent;
-
-      if (candidate !== undefined && candidate !== null && `${candidate}`.trim() !== '') {
-        const n = Number(candidate);
-        if (Number.isNaN(n) || n < 0) {
-          return res.status(400).json({ error: 'rent must be a number >= 0' });
-        }
-        update.rent = n;
-        update.price = n;
-      } else {
-        update.rent = null;
-        update.price = null;
-      }
-    }
-
-    const property = await Property.findByIdAndUpdate(
-      id,
-      { $set: update },
-      { new: true }
-    );
-
-    if (!property) {
-      return res.status(404).json({ error: 'Not found' });
-    }
-
-    res.json(property);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Soft delete (θέτει deletedAt)
-router.delete('/:id', auth, validateObjectIdParam('id'), async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const property = await Property.findByIdAndUpdate(
-      id,
+    const p = await Property.findByIdAndUpdate(
+      req.params.id,
       { $set: { deletedAt: new Date() } },
       { new: true }
     );
-    if (!property) {
-      return res.status(404).json({ error: 'Not found' });
-    }
-    res.json(property);
-  } catch (err) {
-    next(err);
-  }
+    if (!p) return res.status(404).json({ error: 'Property not found' });
+    res.json(p);
+  } catch (e) { next(e); }
 });
 
-// Restore soft-deleted (deletedAt = null)
-router.post('/:id/restore', auth, validateObjectIdParam('id'), async (req, res, next) => {
+// Restore (PATCH, με σταθερό path)
+router.patch('/:id/restore', validateObjectIdParam('id'), async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const property = await Property.findByIdAndUpdate(
-      id,
+    const p = await Property.findByIdAndUpdate(
+      req.params.id,
       { $set: { deletedAt: null } },
       { new: true }
     );
-    if (!property) {
-      return res.status(404).json({ error: 'Not found' });
-    }
-    res.json(property);
-  } catch (err) {
-    next(err);
-  }
+    if (!p) return res.status(404).json({ error: 'Property not found' });
+    res.json(p);
+  } catch (e) { next(e); }
+});
+
+// Δημιουργία απλή (κρατάμε όπως το είχαμε)
+router.post('/create-simple', requireBody(['title']), async (req, res, next) => {
+  try {
+    const landlordId = req.user?.id || req.user?._id;
+    const doc = await Property.create({
+      title: req.body.title,
+      address: req.body.address ?? undefined,
+      rent: (typeof req.body.rent === 'number') ? req.body.rent : undefined,
+      landlordId: landlordId || undefined,
+      deletedAt: null,
+    });
+    res.status(201).json(doc);
+  } catch (e) { next(e); }
 });
 
 module.exports = router;

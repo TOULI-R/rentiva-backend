@@ -1,8 +1,8 @@
 const BASE = import.meta.env.VITE_API_BASE || "http://localhost:5001/api";
-const TOKEN_KEY = "rentiva_token";
+const TOKEN_KEY = "auth_token";
 
 export const storage = {
-  getToken: () => localStorage.getItem(TOKEN_KEY),
+  getToken: () => localStorage.getItem(TOKEN_KEY) || "",
   setToken: (t: string) => localStorage.setItem(TOKEN_KEY, t),
   clearToken: () => localStorage.removeItem(TOKEN_KEY),
 };
@@ -17,65 +17,74 @@ async function request<T = any>(path: string, options: RequestInit = {}): Promis
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
   const text = await res.text();
-  let data: any = null;
-  try { data = text ? JSON.parse(text) : null; } catch { /* noop */ }
-
+  const json = text ? JSON.parse(text) : {};
   if (!res.ok) {
-    const msg = (data && (data.error || data.message)) || res.statusText || "Request failed";
-    throw new Error(msg);
+    const err: any = json || { error: res.statusText };
+    err.status = res.status;
+    throw err;
   }
-  return data as T;
+  return json;
 }
 
-export type Property = {
-  _id: string;
-  title: string;
-  address?: string;
-  rent?: number;
-  deletedAt?: string | null;
-  createdAt?: string;
-  updatedAt?: string;
-};
+async function login(email: string, password: string) {
+  const data = await request<{ token: string }>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+  if (data?.token) storage.setToken(data.token);
+  return data;
+}
 
-export type PropertiesPage = {
-  items: Property[];
-  total: number;
-  page: number;
-  pageSize: number;
-};
+function me() {
+  return request("/auth/me");
+}
 
-export const login = (email: string, password: string) =>
-  request<{ token: string }>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+type ListParams = { q?: string; includeDeleted?: boolean; page?: number; pageSize?: number };
+function qs(params: Record<string, any>) {
+  const u = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== "") u.set(k, String(v));
+  });
+  const s = u.toString();
+  return s ? `?${s}` : "";
+}
 
-export const me = () => request<{ id: string; email: string; name?: string }>("/auth/me");
+function listProperties({ q, includeDeleted, page, pageSize }: ListParams = {}) {
+  return request(`/properties${qs({ q, includeDeleted, page, pageSize })}`);
+}
 
-export const listProperties = (params: {
-  page?: number; pageSize?: number; includeDeleted?: boolean; q?: string;
-} = {}) => {
-  const usp = new URLSearchParams();
-  if (params.page) usp.set("page", String(params.page));
-  if (params.pageSize) usp.set("pageSize", String(params.pageSize));
-  if (params.includeDeleted) usp.set("includeDeleted", "true");
-  if (params.q && params.q.trim()) usp.set("q", params.q.trim());
-  const qs = usp.toString();
-  return request<PropertiesPage | Property[]>(`/properties${qs ? `?${qs}` : ""}`);
-};
+function createProperty(payload: { title: string; address?: string; rent?: number }) {
+  return request(`/properties/create-simple`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
 
-export const createProperty = (payload: { title: string; address?: string; rent?: number }) =>
-  request<Property>("/properties", { method: "POST", body: JSON.stringify(payload) });
+function delProperty(id: string) {
+  return request(`/properties/${id}`, { method: "DELETE" });
+}
 
-export const updateRent = (id: string, rent: number) =>
-  request<Property>(`/properties/${id}`, { method: "PATCH", body: JSON.stringify({ rent }) });
+async function restoreProperty(id: string) {
+  try {
+    return await request(`/properties/${id}/restore`, { method: "PATCH" });
+  } catch (e: any) {
+    if (e?.status === 404) {
+      // Fallback για παλιότερο route
+      return request(`/properties/${id}/restore`, { method: "POST" });
+    }
+    throw e;
+  }
+}
 
-export const delProperty = (id: string) =>
-  request<{ ok: true }>(`/properties/${id}`, { method: "DELETE" });
-
-export const restoreProperty = (id: string) =>
-  request<Property>(`/properties/${id}/restore`, { method: "PATCH" });
-
-export default {
+const api = {
   storage,
-  login, me,
-  listProperties, createProperty, updateRent,
-  delProperty, restoreProperty,
+  request,
+  login,
+  me,
+  listProperties,
+  createProperty,
+  delProperty,
+  restoreProperty,
 };
+
+export default api;

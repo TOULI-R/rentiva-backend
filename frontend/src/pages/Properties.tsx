@@ -10,50 +10,64 @@ interface Property {
   deletedAt?: string | null;
 }
 
-function normalize(res: any): Property[] {
-  if (!res) return [];
-  if (Array.isArray(res)) return res as Property[];
-  if (Array.isArray(res.items)) return res.items as Property[];
-  if (Array.isArray(res.data)) return res.data as Property[];
-  return [];
+type ListResponse = {
+  items: Property[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+function normalizeList(res: any): ListResponse {
+  let items: Property[] = [];
+  if (Array.isArray(res)) items = res as Property[];
+  else if (Array.isArray(res?.items)) items = res.items as Property[];
+  else if (Array.isArray(res?.data)) items = res.data as Property[];
+  const total = typeof res?.total === "number" ? res.total : items.length;
+  const page = typeof res?.page === "number" ? res.page : 1;
+  const pageSize = typeof res?.pageSize === "number" ? res.pageSize : 10;
+  return { items, total, page, pageSize };
 }
 
 export default function Properties() {
+  // filters
+  const [q, setQ] = useState("");
+  const [includeDeleted, setIncludeDeleted] = useState(false);
+
+  // pagination
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
+  const [total, setTotal] = useState(0);
+
   // data
   const [items, setItems] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  // filters / search
-  const [q, setQ] = useState("");
-  const [includeDeleted, setIncludeDeleted] = useState(false);
-
-  // add form
-  const [newTitle, setNewTitle] = useState("");
-  const [newAddress, setNewAddress] = useState("");
-  const [newRent, setNewRent] = useState<string>("");
-
-  // client-side pagination
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(5);
-
-  const fetchList = async () => {
+  async function fetchList(opts?: { resetPage?: boolean }) {
+    if (opts?.resetPage) setPage(1);
     setLoading(true);
     setErr(null);
     try {
-      const res = await api.listProperties({ includeDeleted });
-      setItems(normalize(res));
+      const res = await api.listProperties({ q, includeDeleted, page, pageSize });
+      const data = normalizeList(res);
+      setItems(data.items);
+      setTotal(data.total);
+      setPage(data.page || page);
+      setPageSize(data.pageSize || pageSize);
     } catch (e: any) {
-      setErr(e?.message || "Αποτυχία φόρτωσης.");
+      setErr(e?.error || e?.message || "Αποτυχία φόρτωσης.");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
     fetchList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [includeDeleted]);
+  }, [includeDeleted, page, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const filtered = useMemo(() => items, [items]); // το server-side φίλτρο κάνει τη δουλειά
 
   const onDelete = async (id: string) => {
     if (!confirm("Να γίνει soft delete;")) return;
@@ -74,61 +88,44 @@ export default function Properties() {
     }
   };
 
+  // create (απλό)
+  const [newTitle, setNewTitle] = useState("");
+  const [newAddress, setNewAddress] = useState("");
+  const [newRent, setNewRent] = useState<string>("");
+
   const onAdd = async () => {
     if (!newTitle.trim()) {
       alert("Ο τίτλος είναι υποχρεωτικός.");
       return;
     }
-    const rentNumber =
-      newRent.trim() === "" ? undefined : Number(newRent.trim());
+    const rentNumber = newRent.trim() === "" ? undefined : Number(newRent.trim());
     if (rentNumber !== undefined && Number.isNaN(rentNumber)) {
       alert("Το ενοίκιο πρέπει να είναι αριθμός.");
       return;
     }
-
     try {
       await api.createProperty({
         title: newTitle.trim(),
         address: newAddress.trim() || undefined,
-        rent: rentNumber, // ΠΡΟΣΟΧΗ: χρησιμοποιούμε rent (όχι price)
+        rent: rentNumber,
       });
-      setNewTitle("");
-      setNewAddress("");
-      setNewRent("");
-      fetchList();
+      setNewTitle(""); setNewAddress(""); setNewRent("");
+      fetchList({ resetPage: true });
     } catch (e: any) {
       alert(e?.message || "Αποτυχία δημιουργίας.");
     }
   };
 
-  const filtered = useMemo(() => {
-    if (!q.trim()) return items;
-    const needle = q.trim().toLowerCase();
-    return items.filter(
-      (p) =>
-        p.title?.toLowerCase().includes(needle) ||
-        p.address?.toLowerCase().includes(needle)
-    );
-  }, [items, q]);
-
-  // reset σελίδα όταν αλλάζουν δεδομένα/αναζήτηση
-  useEffect(() => {
-    setPage(1);
-  }, [q, items]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const start = (currentPage - 1) * pageSize;
-  const pageItems = filtered.slice(start, start + pageSize);
-
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
       <main className="mx-auto max-w-5xl px-4 py-6 space-y-6">
+        <h2 className="text-xl font-semibold">Properties</h2>
+
         {/* Add form */}
-        <div className="bg-white p-4 rounded-xl shadow space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <label className="text-sm">
+        <div className="bg-white p-4 rounded-xl shadow flex flex-col sm:flex-row gap-3 sm:items-end">
+          <div className="flex-1">
+            <label className="block text-sm text-gray-700">
               Τίτλος *
               <input
                 className="mt-1 w-full border rounded-xl px-3 py-2"
@@ -137,7 +134,9 @@ export default function Properties() {
                 placeholder="π.χ. Διαμέρισμα Κέντρο"
               />
             </label>
-            <label className="text-sm">
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm text-gray-700">
               Διεύθυνση
               <input
                 className="mt-1 w-full border rounded-xl px-3 py-2"
@@ -146,7 +145,9 @@ export default function Properties() {
                 placeholder="π.χ. Πανεπιστημίου 10"
               />
             </label>
-            <label className="text-sm">
+          </div>
+          <div className="w-40">
+            <label className="block text-sm text-gray-700">
               Ενοίκιο (€)
               <input
                 className="mt-1 w-full border rounded-xl px-3 py-2"
@@ -155,21 +156,19 @@ export default function Properties() {
                 placeholder="700"
               />
             </label>
-            <div className="flex items-end">
-              <button
-                type="button"
-                onClick={onAdd}
-                className="w-full border rounded-xl px-4 py-2 bg-black text-white"
-              >
-                Προσθήκη
-              </button>
-            </div>
           </div>
+          <button
+            type="button"
+            onClick={onAdd}
+            className="whitespace-nowrap border rounded-xl px-4 py-2 bg-black text-white"
+          >
+            Προσθήκη
+          </button>
         </div>
 
-        {/* Search + deleted toggle */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <h2 className="text-xl font-semibold">Properties</h2>
+        {/* Filters */}
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+          <div />
           <div className="flex items-center gap-3">
             <input
               placeholder="Αναζήτηση τίτλου/διεύθυνσης..."
@@ -177,7 +176,7 @@ export default function Properties() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
-            <button className="border rounded-xl px-3 py-2" onClick={fetchList}>
+            <button className="border rounded-xl px-3 py-2" onClick={() => fetchList({ resetPage: true })}>
               Αναζήτηση
             </button>
             <label className="flex items-center gap-2 text-sm">
@@ -192,74 +191,48 @@ export default function Properties() {
         </div>
 
         {err && (
-          <div className="text-sm text-red-600 border border-red-200 bg-red-50 px-3 py-2 rounded-lg">
+          <div className="mb-2 text-sm text-red-600 border border-red-200 bg-red-50 px-3 py-2 rounded-lg">
             {err}
           </div>
         )}
 
         {/* Table */}
-        <div className="bg-white rounded-xl shadow overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-sm text-gray-500">
-                <th className="px-4 py-3">Τίτλος</th>
-                <th className="px-4 py-3">Διεύθυνση</th>
-                <th className="px-4 py-3">Ενοίκιο</th>
-                <th className="px-4 py-3">Κατάσταση</th>
-                <th className="px-4 py-3">Ενέργειες</th>
+        <div className="bg-white rounded-xl shadow overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-100 text-gray-700">
+              <tr>
+                <th className="text-left px-4 py-2">Τίτλος</th>
+                <th className="text-left px-4 py-2">Διεύθυνση</th>
+                <th className="text-left px-4 py-2">Ενοίκιο</th>
+                <th className="text-left px-4 py-2">Κατάσταση</th>
+                <th className="text-left px-4 py-2">Ενέργειες</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i}>
-                    <td className="px-4 py-3" colSpan={5}>
-                      <div className="h-6 bg-gray-100 rounded animate-pulse" />
-                    </td>
-                  </tr>
+                Array.from({ length: pageSize }).map((_, i) => (
+                  <tr key={i}><td className="px-4 py-3" colSpan={5}>
+                    <div className="h-4 bg-gray-100 animate-pulse rounded" />
+                  </td></tr>
                 ))
-              ) : pageItems.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-6 text-sm text-gray-500" colSpan={5}>
-                    Δεν βρέθηκαν properties.
-                  </td>
-                </tr>
+              ) : filtered.length === 0 ? (
+                <tr><td className="px-4 py-6 text-gray-500" colSpan={5}>Δεν βρέθηκαν properties.</td></tr>
               ) : (
-                pageItems.map((p) => (
+                filtered.map((p) => (
                   <tr key={p._id} className="border-t">
                     <td className="px-4 py-3">{p.title || "-"}</td>
                     <td className="px-4 py-3">{p.address || "-"}</td>
+                    <td className="px-4 py-3">{typeof p.rent === 'number' ? `${p.rent}€` : "-"}</td>
                     <td className="px-4 py-3">
-                      {p.rent !== undefined && p.rent !== null
-                        ? `${p.rent.toLocaleString("el-GR")}€`
-                        : "-"}
+                      <span className={`px-2 py-1 rounded text-xs ${p.deletedAt ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+                        {p.deletedAt ? "Deleted" : "Active"}
+                      </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 flex gap-2">
                       {p.deletedAt ? (
-                        <span className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700">
-                          Deleted
-                        </span>
+                        <button onClick={() => onRestore(p._id)} className="text-sm border rounded-xl px-3 py-1">Restore</button>
                       ) : (
-                        <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700">
-                          Active
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 space-x-2">
-                      {p.deletedAt ? (
-                        <button
-                          className="text-sm px-3 py-1 rounded-xl border"
-                          onClick={() => onRestore(p._id)}
-                        >
-                          Restore
-                        </button>
-                      ) : (
-                        <button
-                          className="text-sm px-3 py-1 rounded-xl border"
-                          onClick={() => onDelete(p._id)}
-                        >
-                          Soft delete
-                        </button>
+                        <button onClick={() => onDelete(p._id)} className="text-sm border rounded-xl px-3 py-1">Soft delete</button>
                       )}
                     </td>
                   </tr>
@@ -269,41 +242,34 @@ export default function Properties() {
           </table>
         </div>
 
-        {/* Pagination controls */}
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-gray-600">
-            Σελίδα {currentPage} από {totalPages} •{" "}
-            {filtered.length} εγγραφές
+        {/* Pagination footer */}
+        <div className="flex items-center justify-between text-sm">
+          <div>
+            Σελίδα {page} από {totalPages} • {total} εγγραφές
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <button
-              className="px-3 py-1.5 border rounded-xl disabled:opacity-50"
-              disabled={currentPage <= 1}
+              className="border rounded-xl px-3 py-1 disabled:opacity-50"
+              disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
             >
-              ‹ Προηγούμενη
+              Προηγούμενη
             </button>
             <button
-              className="px-3 py-1.5 border rounded-xl disabled:opacity-50"
-              disabled={currentPage >= totalPages}
+              className="border rounded-xl px-3 py-1 disabled:opacity-50"
+              disabled={page >= totalPages}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             >
-              Επόμενη ›
+              Επόμενη
             </button>
             <select
-              className="ml-2 border rounded-xl px-2 py-1"
+              className="border rounded-xl px-2 py-1"
               value={pageSize}
-              onChange={(e) => {
-                const n = Number(e.target.value) || 5;
-                setPageSize(n);
-                setPage(1);
-              }}
+              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
             >
-              {[5, 10, 20, 50].map((n) => (
-                <option key={n} value={n}>
-                  {n}/σελίδα
-                </option>
-              ))}
+              <option value={5}>5/σελίδα</option>
+              <option value={10}>10/σελίδα</option>
+              <option value={20}>20/σελίδα</option>
             </select>
           </div>
         </div>
