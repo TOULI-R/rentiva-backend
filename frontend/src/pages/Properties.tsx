@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Header from "../components/Header";
 import api from "../lib/api";
 
@@ -8,14 +8,6 @@ interface Property {
   address?: string;
   rent?: number;
   deletedAt?: string | null;
-}
-
-function normalizeProperties(res: any): Property[] {
-  if (!res) return [];
-  if (Array.isArray(res)) return res as Property[];
-  if (Array.isArray(res.items)) return res.items as Property[];
-  if (Array.isArray(res.data)) return res.data as Property[];
-  return [];
 }
 
 export default function Properties() {
@@ -28,22 +20,37 @@ export default function Properties() {
   const [q, setQ] = useState("");
   const [includeDeleted, setIncludeDeleted] = useState(false);
 
-  // pagination (client-side)
+  // pagination (server-side)
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
 
   // add form
   const [newTitle, setNewTitle] = useState("");
   const [newAddress, setNewAddress] = useState("");
   const [newRent, setNewRent] = useState("");
 
+  // inline edit state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editRent, setEditRent] = useState("");
+
   async function fetchList() {
     setLoading(true);
     setErr(null);
     try {
-      const res = await api.listProperties({ includeDeleted });
-      const normalized = normalizeProperties(res);
-      setItems(normalized);
+      const res: any = await api.listProperties({
+        includeDeleted,
+        page,
+        pageSize,
+        q,
+      });
+
+      setItems((res && Array.isArray(res.items) ? res.items : []) as Property[]);
+      setTotalItems(res?.totalItems ?? 0);
+      setTotalPages(res?.totalPages ?? 1);
     } catch (e: any) {
       setErr(e?.message || "Αποτυχία φόρτωσης.");
     } finally {
@@ -51,30 +58,10 @@ export default function Properties() {
     }
   }
 
-  useEffect(() => { fetchList(); }, [includeDeleted]);
-
-  // αναζήτηση (client-side)
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return items;
-    return items.filter((p) =>
-      (p.title || "").toLowerCase().includes(needle) ||
-      (p.address || "").toLowerCase().includes(needle)
-    );
-  }, [items, q]);
-
-  // pagination helpers
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-    if (page < 1) setPage(1);
-  }, [totalPages]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const start = (page - 1) * pageSize;
-  const paged = useMemo(
-    () => filtered.slice(start, start + pageSize),
-    [filtered, start, pageSize]
-  );
+    fetchList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [includeDeleted, page, pageSize, q]);
 
   // actions
   const onDelete = async (id: string) => {
@@ -101,25 +88,82 @@ export default function Properties() {
       alert("Ο τίτλος είναι υποχρεωτικός.");
       return;
     }
+    if (!newAddress.trim()) {
+      alert("Η διεύθυνση είναι υποχρεωτική.");
+      return;
+    }
     const rentNumber =
       newRent.trim() === "" ? undefined : Number(newRent.trim());
-    if (rentNumber !== undefined && Number.isNaN(rentNumber)) {
-      alert("Το ενοίκιο πρέπει να είναι αριθμός.");
+    if (rentNumber === undefined || Number.isNaN(rentNumber)) {
+      alert("Το ενοίκιο είναι υποχρεωτικό και πρέπει να είναι αριθμός.");
       return;
     }
     try {
       await api.createProperty({
         title: newTitle.trim(),
-        address: newAddress.trim() || undefined,
+        address: newAddress.trim(),
         rent: rentNumber,
       });
       setNewTitle("");
       setNewAddress("");
       setNewRent("");
+      setPage(1); // μετά τη δημιουργία, γύρνα στην 1η σελίδα
       await fetchList();
-      setPage(1);
     } catch (e: any) {
       alert(e?.message || "Αποτυχία δημιουργίας.");
+    }
+  };
+
+  // inline edit helpers
+  const startEdit = (p: Property) => {
+    setEditingId(p._id);
+    setEditTitle(p.title || "");
+    setEditAddress(p.address || "");
+    setEditRent(
+      p.rent != null && !Number.isNaN(p.rent) ? String(p.rent) : ""
+    );
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditTitle("");
+    setEditAddress("");
+    setEditRent("");
+  };
+
+  const saveEdit = async () => {
+    if (!editingId) return;
+
+    if (!editTitle.trim()) {
+      alert("Ο τίτλος είναι υποχρεωτικός.");
+      return;
+    }
+    if (!editAddress.trim()) {
+      alert("Η διεύθυνση είναι υποχρεωτική.");
+      return;
+    }
+    if (!editRent.trim()) {
+      alert("Το ενοίκιο είναι υποχρεωτικό.");
+      return;
+    }
+    const rentNumber = Number(editRent.trim());
+    if (Number.isNaN(rentNumber)) {
+      alert("Το ενοίκιο πρέπει να είναι αριθμός.");
+      return;
+    }
+
+    const payload = {
+      title: editTitle.trim(),
+      address: editAddress.trim(),
+      rent: rentNumber,
+    };
+
+    try {
+      await api.updateProperty(editingId, payload);
+      cancelEdit();
+      await fetchList();
+    } catch (e: any) {
+      alert(e?.message || "Αποτυχία ενημέρωσης.");
     }
   };
 
@@ -145,7 +189,7 @@ export default function Properties() {
             </div>
             <div className="flex-1">
               <label className="block text-sm text-gray-700">
-                Διεύθυνση
+                Διεύθυνση *
                 <input
                   className="mt-1 w-full border rounded-xl px-3 py-2"
                   value={newAddress}
@@ -156,7 +200,7 @@ export default function Properties() {
             </div>
             <div className="w-32">
               <label className="block text-sm text-gray-700">
-                Ενοίκιο (€)
+                Ενοίκιο (€) *
                 <input
                   className="mt-1 w-full border rounded-xl px-3 py-2"
                   value={newRent}
@@ -182,11 +226,14 @@ export default function Properties() {
                 placeholder="Αναζήτηση τίτλου/διεύθυνσης..."
                 className="border rounded-xl px-3 py-2 w-64"
                 value={q}
-                onChange={(e) => setQ(e.target.value)}
+                onChange={(e) => {
+                  setQ(e.target.value);
+                  setPage(1);
+                }}
               />
               <button
                 className="border rounded-xl px-3 py-2"
-                onClick={() => setPage(1)} // δεν ξαναχτυπάμε API
+                onClick={() => setPage(1)}
               >
                 Αναζήτηση
               </button>
@@ -230,40 +277,107 @@ export default function Properties() {
                 </tr>
               </thead>
               <tbody>
-                {paged.length === 0 ? (
+                {items.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-6 text-gray-500">
                       Δεν βρέθηκαν properties.
                     </td>
                   </tr>
                 ) : (
-                  paged.map((p) => {
+                  items.map((p) => {
                     const isDeleted = !!p.deletedAt;
+                    const isEditing = editingId === p._id;
+
                     return (
                       <tr key={p._id} className="border-t">
-                        <td className="px-4 py-2">{p.title || "-"}</td>
-                        <td className="px-4 py-2">{p.address || "-"}</td>
-                        <td className="px-4 py-2">{p.rent != null ? `${p.rent}€` : "-"}</td>
                         <td className="px-4 py-2">
-                          <span className={`inline-block text-xs px-2 py-1 rounded-full ${isDeleted ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                            {isDeleted ? 'Deleted' : 'Active'}
+                          {isEditing ? (
+                            <input
+                              className="w-full border rounded-xl px-2 py-1 text-sm"
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                            />
+                          ) : (
+                            p.title || "-"
+                          )}
+                        </td>
+                        <td className="px-4 py-2">
+                          {isEditing ? (
+                            <input
+                              className="w-full border rounded-xl px-2 py-1 text-sm"
+                              value={editAddress}
+                              onChange={(e) => setEditAddress(e.target.value)}
+                            />
+                          ) : (
+                            p.address || "-"
+                          )}
+                        </td>
+                        <td className="px-4 py-2">
+                          {isEditing ? (
+                            <input
+                              className="w-24 border rounded-xl px-2 py-1 text-sm"
+                              value={editRent}
+                              onChange={(e) => setEditRent(e.target.value)}
+                            />
+                          ) : p.rent != null ? (
+                            `${p.rent}€`
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                        <td className="px-4 py-2">
+                          <span
+                            className={`inline-block text-xs px-2 py-1 rounded-full ${
+                              isDeleted
+                                ? "bg-red-100 text-red-700"
+                                : "bg-green-100 text-green-700"
+                            }`}
+                          >
+                            {isDeleted ? "Deleted" : "Active"}
                           </span>
                         </td>
                         <td className="px-4 py-2">
-                          {isDeleted ? (
-                            <button
-                              className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
-                              onClick={() => onRestore(p._id)}
-                            >
-                              Restore
-                            </button>
+                          {isEditing ? (
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                className="text-sm px-3 py-1.5 rounded-xl border bg-black text-white"
+                                onClick={saveEdit}
+                              >
+                                Αποθήκευση
+                              </button>
+                              <button
+                                className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
+                                onClick={cancelEdit}
+                              >
+                                Ακύρωση
+                              </button>
+                            </div>
                           ) : (
-                            <button
-                              className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
-                              onClick={() => onDelete(p._id)}
-                            >
-                              Soft delete
-                            </button>
+                            <div className="flex flex-wrap gap-2">
+                              {isDeleted ? (
+                                <button
+                                  className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
+                                  onClick={() => onRestore(p._id)}
+                                >
+                                  Restore
+                                </button>
+                              ) : (
+                                <>
+                                  <button
+                                    className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
+                                    onClick={() => startEdit(p)}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
+                                    onClick={() => onDelete(p._id)}
+                                  >
+                                    Soft delete
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -276,7 +390,7 @@ export default function Properties() {
             {/* footer / pagination */}
             <div className="flex items-center justify-between px-4 py-3">
               <div className="text-sm text-gray-600">
-                Σελίδα {page} από {totalPages} · {filtered.length} εγγραφές
+                Σελίδα {page} από {totalPages} · {totalItems} εγγραφές
               </div>
               <div className="flex items-center gap-3">
                 <button
@@ -296,7 +410,10 @@ export default function Properties() {
                 <select
                   className="border rounded-xl px-2 py-1"
                   value={pageSize}
-                  onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(1);
+                  }}
                 >
                   <option value={5}>5/σελίδα</option>
                   <option value={10}>10/σελίδα</option>

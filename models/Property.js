@@ -6,7 +6,7 @@ const PropertySchema = new mongoose.Schema(
     landlordId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Landlord',
-      required: true,
+      required: false, // δεν είναι πλέον υποχρεωτικό
       index: true,
     },
     title: {

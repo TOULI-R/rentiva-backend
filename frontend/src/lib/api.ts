@@ -2,10 +2,12 @@ const BASE =
   (import.meta as any).env?.VITE_API_BASE ||
   'http://localhost:5001/api';
 
+const TOKEN_KEY = 'rentiva_token';
+
 export const storage = {
-  getToken: (): string | null => localStorage.getItem('token'),
-  setToken: (t: string) => localStorage.setItem('token', t),
-  clearToken: () => localStorage.removeItem('token'),
+  getToken: (): string | null => localStorage.getItem(TOKEN_KEY),
+  setToken: (t: string) => localStorage.setItem(TOKEN_KEY, t),
+  clearToken: () => localStorage.removeItem(TOKEN_KEY),
 };
 
 async function request<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -27,12 +29,44 @@ async function request<T = any>(path: string, options: RequestInit = {}): Promis
     try {
       const j = await res.json();
       msg = (j && (j.error || j.message)) || msg;
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     throw new Error(msg);
   }
 
   // Κάποια endpoints ίσως επιστρέφουν empty body
-  try { return await res.json(); } catch { return undefined as any; }
+  try {
+    return await res.json();
+  } catch {
+    return undefined as any;
+  }
+}
+
+// ---- Types ----
+export interface Property {
+  _id: string;
+  title: string;
+  address?: string;
+  rent?: number;
+  deletedAt?: string | null;
+  landlordId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type CreatePayload = {
+  title: string;
+  address?: string;
+  rent?: number;
+};
+
+export interface PaginatedPropertiesResponse {
+  items: Property[];
+  totalItems: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 // ---- Auth ----
@@ -46,13 +80,22 @@ async function login(email: string, password: string) {
 }
 
 // ---- Properties ----
-type CreatePayload = { title: string; address?: string; rent?: number };
-
-async function listProperties(opts: { includeDeleted?: boolean } = {}) {
+// Νέα listProperties με pagination + search
+async function listProperties(opts: {
+  includeDeleted?: boolean;
+  page?: number;
+  pageSize?: number;
+  q?: string;
+} = {}): Promise<PaginatedPropertiesResponse> {
   const qs = new URLSearchParams();
+
   if (opts.includeDeleted) qs.set('includeDeleted', 'true');
+  if (opts.page && opts.page > 0) qs.set('page', String(opts.page));
+  if (opts.pageSize && opts.pageSize > 0) qs.set('pageSize', String(opts.pageSize));
+  if (opts.q && opts.q.trim() !== '') qs.set('q', opts.q.trim());
+
   const suffix = qs.toString() ? `?${qs}` : '';
-  return request(`/properties${suffix}`);
+  return request<PaginatedPropertiesResponse>(`/properties${suffix}`);
 }
 
 async function createProperty(payload: CreatePayload) {
@@ -77,7 +120,10 @@ async function restoreProperty(id: string) {
 
 // Προαιρετικά, αν το χρειαστούμε αργότερα
 async function updateProperty(id: string, payload: Partial<CreatePayload>) {
-  return request(`/properties/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  return request(`/properties/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
 }
 
 const api = {
