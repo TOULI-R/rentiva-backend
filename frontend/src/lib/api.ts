@@ -225,6 +225,17 @@ async function updateProperty(id: string, payload: Partial<CreatePayload>) {
   });
 }
 
+// ΝΕΟ: helper για λεπτομέρειες ακινήτου
+async function getPropertyById(
+  id: string,
+  opts: { includeDeleted?: boolean } = {}
+): Promise<Property> {
+  const qs = new URLSearchParams();
+  if (opts.includeDeleted) qs.set("includeDeleted", "true");
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return request<Property>(`/properties/${id}${suffix}`);
+}
+
 const api = {
   BASE,
   storage,
@@ -234,6 +245,7 @@ const api = {
   delProperty,
   restoreProperty,
   updateProperty,
+  getPropertyById,
 };
 
 export default api;

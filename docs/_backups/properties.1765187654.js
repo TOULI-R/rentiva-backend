@@ -53,27 +53,6 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// Λεπτομέρειες ενός ακινήτου (με επιλογή εμφάνισης διαγεγραμμένων)
-router.get('/:id', validateObjectIdParam('id'), async (req, res, next) => {
-  try {
-    const { includeDeleted } = req.query;
-    const p = await Property.findById(req.params.id);
-
-    if (!p) {
-      return res.status(404).json({ error: 'Property not found' });
-    }
-
-    // Αν δεν ζητηθούν ρητά τα διαγεγραμμένα, κρύβουμε όσα έχουν deletedAt
-    if (includeDeleted !== 'true' && p.deletedAt) {
-      return res.status(404).json({ error: 'Property not found' });
-    }
-
-    res.json(p);
-  } catch (e) {
-    next(e);
-  }
-});
-
 // Soft delete
 router.delete('/:id', validateObjectIdParam('id'), async (req, res, next) => {
   try {
