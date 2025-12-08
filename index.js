@@ -23,9 +23,10 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 
-// Routers & error middleware
+// Routers & middleware
 const authRouter = require('./routes/auth');
 const propertiesRouter = require('./routes/properties');
+const authMiddleware = require('./middleware/auth');
 const { notFound, errorHandler } = require('./middleware/errors');
 
 // ── App & middleware ──────────────────────────────────────────────────────
@@ -57,7 +58,14 @@ mongoose
 
     // Routers
     app.use('/api/auth', authRouter);
-    app.use('/api/properties', propertiesRouter);
+
+    if (process.env.AUTH_OFF === 'true') {
+      console.log('[AUTH] AUTH_OFF=true → /api/properties ΔΕΝ προστατεύεται (public)');
+      app.use('/api/properties', propertiesRouter);
+    } else {
+      console.log('[AUTH] Protecting /api/properties with JWT auth middleware');
+      app.use('/api/properties', authMiddleware, propertiesRouter);
+    }
 
     // Healthcheck
     app.get('/api/health', (req, res) => {

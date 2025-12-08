@@ -81,11 +81,12 @@ async function restoreHandler(req, res, next) {
 router.patch('/:id/restore', validateObjectIdParam('id'), restoreHandler);
 router.post('/:id/restore',  validateObjectIdParam('id'), restoreHandler);
 
-// Ενημέρωση (inline edit) τίτλου / διεύθυνσης / ενοικίου
+// Ενημέρωση (inline edit) βασικών πεδίων
 router.patch('/:id', validateObjectIdParam('id'), async (req, res, next) => {
   try {
     const updates = {};
 
+    // βασικά
     if (typeof req.body.title === 'string') {
       updates.title = req.body.title;
     }
@@ -94,6 +95,66 @@ router.patch('/:id', validateObjectIdParam('id'), async (req, res, next) => {
     }
     if (typeof req.body.rent === 'number') {
       updates.rent = req.body.rent;
+    }
+    if (typeof req.body.size === 'number') {
+      updates.size = req.body.size;
+    }
+    if (typeof req.body.floor === 'number') {
+      updates.floor = req.body.floor;
+    }
+    if (typeof req.body.bedrooms === 'number') {
+      updates.bedrooms = req.body.bedrooms;
+    }
+    if (typeof req.body.bathrooms === 'number') {
+      updates.bathrooms = req.body.bathrooms;
+    }
+    if (typeof req.body.description === 'string') {
+      updates.description = req.body.description;
+    }
+
+    // χαρακτηριστικά κτιρίου
+    if (typeof req.body.yearBuilt === 'number') {
+      updates.yearBuilt = req.body.yearBuilt;
+    }
+    if (typeof req.body.yearRenovated === 'number') {
+      updates.yearRenovated = req.body.yearRenovated;
+    }
+    if (typeof req.body.heatingType === 'string') {
+      updates.heatingType = req.body.heatingType;
+    }
+    if (typeof req.body.energyClass === 'string') {
+      updates.energyClass = req.body.energyClass;
+    }
+    if (typeof req.body.parking === 'string') {
+      updates.parking = req.body.parking;
+    }
+    if (typeof req.body.elevator === 'boolean') {
+      updates.elevator = req.body.elevator;
+    }
+
+    // επιπλωμένο / κατοικίδια
+    if (typeof req.body.furnished === 'string') {
+      updates.furnished = req.body.furnished;
+    }
+    if (typeof req.body.petsAllowed === 'boolean') {
+      updates.petsAllowed = req.body.petsAllowed;
+    }
+
+    // Οικονομικά πεδία
+    if (typeof req.body.commonCharges === 'number') {
+      updates.commonCharges = req.body.commonCharges;
+    }
+    if (typeof req.body.otherFixedCosts === 'number') {
+      updates.otherFixedCosts = req.body.otherFixedCosts;
+    }
+    if (typeof req.body.billsIncluded === 'boolean') {
+      updates.billsIncluded = req.body.billsIncluded;
+    }
+    if (typeof req.body.depositMonths === 'number') {
+      updates.depositMonths = req.body.depositMonths;
+    }
+    if (typeof req.body.minimumContractMonths === 'number') {
+      updates.minimumContractMonths = req.body.minimumContractMonths;
     }
 
     if (Object.keys(updates).length === 0) {
@@ -121,6 +182,33 @@ router.post('/create-simple', requireBody(['title']), async (req, res, next) => 
       title: req.body.title,
       address: req.body.address ?? undefined,
       rent: typeof req.body.rent === 'number' ? req.body.rent : undefined,
+      size: typeof req.body.size === 'number' ? req.body.size : undefined,
+      floor: typeof req.body.floor === 'number' ? req.body.floor : undefined,
+      bedrooms: typeof req.body.bedrooms === 'number' ? req.body.bedrooms : undefined,
+      bathrooms: typeof req.body.bathrooms === 'number' ? req.body.bathrooms : undefined,
+
+      // χαρακτηριστικά κτιρίου
+      yearBuilt: typeof req.body.yearBuilt === 'number' ? req.body.yearBuilt : undefined,
+      yearRenovated: typeof req.body.yearRenovated === 'number' ? req.body.yearRenovated : undefined,
+      heatingType: typeof req.body.heatingType === 'string' ? req.body.heatingType : undefined,
+      energyClass: typeof req.body.energyClass === 'string' ? req.body.energyClass : undefined,
+      parking: typeof req.body.parking === 'string' ? req.body.parking : undefined,
+      elevator: typeof req.body.elevator === 'boolean' ? req.body.elevator : undefined,
+
+      // επιπλωμένο / κατοικίδια
+      furnished: typeof req.body.furnished === 'string' ? req.body.furnished : undefined,
+      petsAllowed: typeof req.body.petsAllowed === 'boolean' ? req.body.petsAllowed : undefined,
+
+      // περιγραφή
+      description: typeof req.body.description === 'string' ? req.body.description : undefined,
+
+      // οικονομικά πεδία
+      commonCharges: typeof req.body.commonCharges === 'number' ? req.body.commonCharges : undefined,
+      otherFixedCosts: typeof req.body.otherFixedCosts === 'number' ? req.body.otherFixedCosts : undefined,
+      billsIncluded: typeof req.body.billsIncluded === 'boolean' ? req.body.billsIncluded : undefined,
+      depositMonths: typeof req.body.depositMonths === 'number' ? req.body.depositMonths : undefined,
+      minimumContractMonths: typeof req.body.minimumContractMonths === 'number' ? req.body.minimumContractMonths : undefined,
+
       landlordId: landlordId || undefined,
       deletedAt: null,
       isDeleted: false,

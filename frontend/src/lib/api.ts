@@ -1,36 +1,57 @@
 const BASE =
   (import.meta as any).env?.VITE_API_BASE ||
-  'http://localhost:5001/api';
+  "http://localhost:5001/api";
 
-const TOKEN_KEY = 'rentiva_token';
+const TOKEN_KEY = "rentiva_token";
 
 export const storage = {
-  getToken: (): string | null => localStorage.getItem(TOKEN_KEY),
-  setToken: (t: string) => localStorage.setItem(TOKEN_KEY, t),
-  clearToken: () => localStorage.removeItem(TOKEN_KEY),
+  getToken: (): string | null => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem(TOKEN_KEY);
+  },
+  setToken: (t: string) => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(TOKEN_KEY, t);
+  },
+  clearToken: () => {
+    if (typeof window === "undefined") return;
+    localStorage.removeItem(TOKEN_KEY);
+  },
 };
 
-async function request<T = any>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T = any>(
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
     ...(options.headers as any),
   };
+
   const token = storage.getToken();
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
 
-  // 401 => συνήθως ληγμένο token
+  // 401 => ληγμένο / άκυρο token
   if (res.status === 401) {
-    throw new Error('invalid or expired token');
+    storage.clearToken();
+    if (
+      typeof window !== "undefined" &&
+      window.location.pathname !== "/login"
+    ) {
+      window.location.href = "/login";
+    }
+    throw new Error("invalid or expired token");
   }
+
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try {
       const j = await res.json();
       msg = (j && (j.error || j.message)) || msg;
     } catch {
-      /* ignore */
+      // ignore JSON parse error
     }
     throw new Error(msg);
   }
@@ -44,11 +65,67 @@ async function request<T = any>(path: string, options: RequestInit = {}): Promis
 }
 
 // ---- Types ----
+
+export type HeatingType =
+  | "none"
+  | "central_oil"
+  | "central_gas"
+  | "autonomous_gas"
+  | "autonomous_oil"
+  | "heat_pump"
+  | "electric"
+  | "other";
+
+export type EnergyClass =
+  | "unknown"
+  | "A+"
+  | "A"
+  | "B+"
+  | "B"
+  | "C"
+  | "D"
+  | "E"
+  | "Z"
+  | "H";
+
+export type ParkingType =
+  | "none"
+  | "street"
+  | "open"
+  | "closed"
+  | "garage";
+
+export type FurnishedType = "none" | "partial" | "full";
+
 export interface Property {
   _id: string;
   title: string;
-  address?: string;
-  rent?: number;
+  address: string;
+  rent: number;
+
+  size?: number;
+  floor?: number;
+  bedrooms?: number;
+  bathrooms?: number;
+
+  yearBuilt?: number;
+  yearRenovated?: number;
+  heatingType?: HeatingType;
+  energyClass?: EnergyClass;
+  parking?: ParkingType;
+  elevator?: boolean;
+
+  furnished?: FurnishedType;
+  petsAllowed?: boolean;
+
+  description?: string;
+
+  commonCharges?: number;
+  otherFixedCosts?: number;
+  billsIncluded?: boolean;
+  depositMonths?: number;
+  minimumContractMonths?: number;
+
   deletedAt?: string | null;
   landlordId?: string;
   createdAt?: string;
@@ -57,8 +134,31 @@ export interface Property {
 
 export type CreatePayload = {
   title: string;
-  address?: string;
-  rent?: number;
+  address: string;
+  rent: number;
+
+  size?: number;
+  floor?: number;
+  bedrooms?: number;
+  bathrooms?: number;
+
+  yearBuilt?: number;
+  yearRenovated?: number;
+  heatingType?: HeatingType;
+  energyClass?: EnergyClass;
+  parking?: ParkingType;
+  elevator?: boolean;
+
+  furnished?: FurnishedType;
+  petsAllowed?: boolean;
+
+  description?: string;
+
+  commonCharges?: number;
+  otherFixedCosts?: number;
+  billsIncluded?: boolean;
+  depositMonths?: number;
+  minimumContractMonths?: number;
 };
 
 export interface PaginatedPropertiesResponse {
@@ -71,8 +171,8 @@ export interface PaginatedPropertiesResponse {
 
 // ---- Auth ----
 async function login(email: string, password: string) {
-  const j = await request<{ token: string }>('/auth/login', {
-    method: 'POST',
+  const j = await request<{ token: string }>("/auth/login", {
+    method: "POST",
     body: JSON.stringify({ email, password }),
   });
   if (j?.token) storage.setToken(j.token);
@@ -80,7 +180,6 @@ async function login(email: string, password: string) {
 }
 
 // ---- Properties ----
-// Νέα listProperties με pagination + search
 async function listProperties(opts: {
   includeDeleted?: boolean;
   page?: number;
@@ -89,39 +188,39 @@ async function listProperties(opts: {
 } = {}): Promise<PaginatedPropertiesResponse> {
   const qs = new URLSearchParams();
 
-  if (opts.includeDeleted) qs.set('includeDeleted', 'true');
-  if (opts.page && opts.page > 0) qs.set('page', String(opts.page));
-  if (opts.pageSize && opts.pageSize > 0) qs.set('pageSize', String(opts.pageSize));
-  if (opts.q && opts.q.trim() !== '') qs.set('q', opts.q.trim());
+  if (opts.includeDeleted) qs.set("includeDeleted", "true");
+  if (opts.page && opts.page > 0) qs.set("page", String(opts.page));
+  if (opts.pageSize && opts.pageSize > 0)
+    qs.set("pageSize", String(opts.pageSize));
+  if (opts.q && opts.q.trim() !== "") qs.set("q", opts.q.trim());
 
-  const suffix = qs.toString() ? `?${qs}` : '';
+  const suffix = qs.toString() ? `?${qs}` : "";
   return request<PaginatedPropertiesResponse>(`/properties${suffix}`);
 }
 
 async function createProperty(payload: CreatePayload) {
-  return request('/properties/create-simple', {
-    method: 'POST',
+  return request("/properties/create-simple", {
+    method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 async function delProperty(id: string) {
-  return request(`/properties/${id}`, { method: 'DELETE' });
+  return request(`/properties/${id}`, { method: "DELETE" });
 }
 
 async function restoreProperty(id: string) {
   try {
-    return await request(`/properties/${id}/restore`, { method: 'PATCH' });
+    return await request(`/properties/${id}/restore`, { method: "PATCH" });
   } catch {
     // fallback (σε περίπτωση που στον server παίζει POST)
-    return await request(`/properties/${id}/restore`, { method: 'POST' });
+    return await request(`/properties/${id}/restore`, { method: "POST" });
   }
 }
 
-// Προαιρετικά, αν το χρειαστούμε αργότερα
 async function updateProperty(id: string, payload: Partial<CreatePayload>) {
   return request(`/properties/${id}`, {
-    method: 'PATCH',
+    method: "PATCH",
     body: JSON.stringify(payload),
   });
 }
