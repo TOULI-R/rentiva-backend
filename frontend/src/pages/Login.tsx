@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../lib/api";
+import { useNotification } from "../lib/notifications";
 
 export default function Login() {
   const [email, setEmail] = useState("eleni@email.com");
@@ -8,6 +9,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const navigate = useNavigate();
+  const notifications = useNotification();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -15,9 +17,12 @@ export default function Login() {
     setLoading(true);
     try {
       await api.login(email, password);
+      notifications.notifySuccess("Συνδεθήκατε επιτυχώς.");
       navigate("/properties");
     } catch (ex: any) {
-      setErr(ex?.error || ex?.message || "Login failed");
+      const message = ex?.error || ex?.message || "Η σύνδεση απέτυχε.";
+      setErr(message);
+      notifications.notifyError(message);
     } finally {
       setLoading(false);
     }

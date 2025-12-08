@@ -1,90 +1,80 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react";
+import React, { createContext, useCallback, useContext, useState } from "react";
 
 type NotificationType = "success" | "error" | "info";
 
-export interface NotificationState {
+interface Notification {
+  id: number;
   type: NotificationType;
   message: string;
 }
 
-interface NotificationContextValue {
-  notification: NotificationState | null;
-  notifySuccess: (msg: string) => void;
-  notifyError: (msg: string) => void;
-  notifyInfo: (msg: string) => void;
-  clear: () => void;
+interface NotificationsContextValue {
+  notify: (message: string, type?: NotificationType) => void;
+  notifySuccess: (message: string) => void;
+  notifyError: (message: string) => void;
 }
 
-const NotificationContext = createContext<NotificationContextValue | undefined>(
-  undefined
-);
+const NotificationsContext = createContext<NotificationsContextValue | undefined>(undefined);
 
-export function NotificationProvider({ children }: { children: ReactNode }) {
-  const [notification, setNotification] = useState<NotificationState | null>(
-    null
-  );
+export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [items, setItems] = useState<Notification[]>([]);
 
-  const show = useCallback((type: NotificationType, message: string) => {
-    setNotification({ type, message });
+  const remove = useCallback((id: number) => {
+    setItems((current) => current.filter((n) => n.id !== id));
   }, []);
 
-  const notifySuccess = useCallback(
-    (msg: string) => show("success", msg),
-    [show]
-  );
-  const notifyError = useCallback(
-    (msg: string) => show("error", msg),
-    [show]
-  );
-  const notifyInfo = useCallback(
-    (msg: string) => show("info", msg),
-    [show]
+  const push = useCallback(
+    (message: string, type: NotificationType = "info") => {
+      if (!message) return;
+      const id = Date.now() + Math.random();
+      setItems((current) => [...current, { id, type, message }]);
+      // αυτόματο κλείσιμο μετά από 4"
+      setTimeout(() => remove(id), 4000);
+    },
+    [remove]
   );
 
-  useEffect(() => {
-    if (!notification) return;
-    const id = setTimeout(() => setNotification(null), 4000);
-    return () => clearTimeout(id);
-  }, [notification]);
-
-  const clear = () => setNotification(null);
+  const value: NotificationsContextValue = {
+    notify: push,
+    notifySuccess: (msg) => push(msg, "success"),
+    notifyError: (msg) => push(msg, "error"),
+  };
 
   return (
-    <NotificationContext.Provider
-      value={{ notification, notifySuccess, notifyError, notifyInfo, clear }}
-    >
+    <NotificationsContext.Provider value={value}>
       {children}
-      {notification && (
-        <div className="fixed bottom-4 right-4 z-50">
-          <div
-            className={
-              "rounded-xl px-4 py-2 shadow-lg text-sm text-white " +
-              (notification.type === "success"
-                ? "bg-emerald-600"
-                : notification.type === "error"
-                ? "bg-red-600"
-                : "bg-gray-800")
-            }
-          >
-            {notification.message}
-          </div>
+      {/* Container για τα toasts */}
+      <div className="fixed inset-x-0 top-4 z-50 flex justify-center pointer-events-none">
+        <div className="w-full max-w-md px-4 space-y-2">
+          {items.map((n) => (
+            <div
+              key={n.id}
+              className={`pointer-events-auto rounded-xl border px-4 py-3 text-sm shadow-md ${
+                n.type === "success"
+                  ? "bg-green-50 border-green-200 text-green-900"
+                  : n.type === "error"
+                  ? "bg-red-50 border-red-200 text-red-900"
+                  : "bg-slate-50 border-slate-200 text-slate-900"
+              }`}
+            >
+              {n.message}
+            </div>
+          ))}
         </div>
-      )}
-    </NotificationContext.Provider>
+      </div>
+    </NotificationsContext.Provider>
   );
-}
+};
 
-export function useNotification() {
-  const ctx = useContext(NotificationContext);
+export const useNotifications = (): NotificationsContextValue => {
+  const ctx = useContext(NotificationsContext);
   if (!ctx) {
-    throw new Error("useNotification must be used within a NotificationProvider");
+    throw new Error("useNotifications must be used within NotificationsProvider");
   }
   return ctx;
-}
+};
+
+// Alias για παλιό κώδικα που κάνει import useNotification
+export const useNotification = (): NotificationsContextValue => {
+  return useNotifications();
+};
