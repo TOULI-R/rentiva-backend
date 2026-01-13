@@ -43,7 +43,7 @@ function formatNumber(n: number | undefined | null): string {
   return String(n);
 }
 
-export function PropertyDetails() {
+function PropertyDetails() {
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams<{ id: string }>();
@@ -70,9 +70,8 @@ export function PropertyDetails() {
         if (!cancelled) setProperty(p);
       })
       .catch((e: any) => {
-        if (!cancelled) {
+        if (!cancelled)
           setErr(e?.message || "Αποτυχία φόρτωσης ακινήτου.");
-        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -313,3 +312,5 @@ export function PropertyDetails() {
     </div>
   );
 }
+
+export default PropertyDetails;

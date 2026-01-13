@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import Header from "../components/Header";
 import api, {
   type Property,
@@ -16,9 +15,8 @@ function formatNumber(n: number | undefined | null): string {
   return String(n);
 }
 
-function Properties() {
+export default function Properties() {
   const { notifyError, notifySuccess } = useNotification();
-  const navigate = useNavigate();
 
   // data
   const [items, setItems] = useState<Property[]>([]);
@@ -29,7 +27,7 @@ function Properties() {
   const [q, setQ] = useState("");
   const [includeDeleted, setIncludeDeleted] = useState(false);
 
-  // pagination (server-side style)
+  // pagination (server-side)
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
@@ -301,11 +299,6 @@ function Properties() {
     } catch (e: any) {
       notifyError(e?.message || "Αποτυχία restore.");
     }
-  };
-
-  // ---------- View ----------
-  const goToDetails = (p: Property) => {
-    navigate(`/properties/${p._id}`, { state: { property: p } });
   };
 
   // ---------- Edit helpers ----------
@@ -1341,7 +1334,7 @@ function Properties() {
                         )}
 
                         <div className="text-xs text-gray-700">
-                          <span className="font-semibold">Βασικά:</span>{" "}
+                          <span className="font-semibold">��� Βασικά:</span>{" "}
                           {formatNumber(p.size)} τ.μ. ·{" "}
                           {p.floor != null && !Number.isNaN(p.floor)
                             ? `Όροφος ${p.floor}`
@@ -1359,7 +1352,7 @@ function Properties() {
                         </div>
 
                         <div className="text-xs text-gray-700">
-                          <span className="font-semibold">Κτίριο:</span>{" "}
+                          <span className="font-semibold">��� Κτίριο:</span>{" "}
                           {p.yearBuilt &&
                           !Number.isNaN(p.yearBuilt)
                             ? `Έτος ${p.yearBuilt}`
@@ -1399,12 +1392,6 @@ function Properties() {
                       </div>
 
                       <div className="flex flex-wrap gap-2 mt-3">
-                        <button
-                          className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
-                          onClick={() => goToDetails(p)}
-                        >
-                          Προβολή
-                        </button>
                         {!isDeleted && (
                           <button
                             className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
@@ -1475,5 +1462,3 @@ function Properties() {
     </div>
   );
 }
-
-export default Properties;

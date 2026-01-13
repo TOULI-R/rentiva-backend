@@ -198,6 +198,10 @@ async function listProperties(opts: {
   return request<PaginatedPropertiesResponse>(`/properties${suffix}`);
 }
 
+async function getProperty(id: string): Promise<Property> {
+  return request<Property>(`/properties/${id}`);
+}
+
 async function createProperty(payload: CreatePayload) {
   return request("/properties/create-simple", {
     method: "POST",
@@ -225,27 +229,16 @@ async function updateProperty(id: string, payload: Partial<CreatePayload>) {
   });
 }
 
-// ΝΕΟ: helper για λεπτομέρειες ακινήτου
-async function getPropertyById(
-  id: string,
-  opts: { includeDeleted?: boolean } = {}
-): Promise<Property> {
-  const qs = new URLSearchParams();
-  if (opts.includeDeleted) qs.set("includeDeleted", "true");
-  const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  return request<Property>(`/properties/${id}${suffix}`);
-}
-
 const api = {
   BASE,
   storage,
   login,
   listProperties,
+  getProperty,
   createProperty,
   delProperty,
   restoreProperty,
   updateProperty,
-  getPropertyById,
 };
 
 export default api;

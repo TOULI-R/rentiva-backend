@@ -1,80 +1,81 @@
-import React, { createContext, useCallback, useContext, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
-type NotificationType = "success" | "error" | "info";
+type NotificationType = "success" | "error";
 
-interface Notification {
+type NotificationItem = {
   id: number;
   type: NotificationType;
   message: string;
-}
+};
 
-interface NotificationsContextValue {
-  notify: (message: string, type?: NotificationType) => void;
-  notifySuccess: (message: string) => void;
-  notifyError: (message: string) => void;
-}
+type NotificationContextValue = {
+  notifySuccess: (msg: string) => void;
+  notifyError: (msg: string) => void;
+};
 
-const NotificationsContext = createContext<NotificationsContextValue | undefined>(undefined);
+const NotificationContext = createContext<NotificationContextValue | undefined>(
+  undefined
+);
 
-export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [items, setItems] = useState<Notification[]>([]);
+export function NotificationProvider({ children }: { children: ReactNode }) {
+  const [items, setItems] = useState<NotificationItem[]>([]);
 
   const remove = useCallback((id: number) => {
-    setItems((current) => current.filter((n) => n.id !== id));
+    setItems((prev) => prev.filter((i) => i.id !== id));
   }, []);
 
   const push = useCallback(
-    (message: string, type: NotificationType = "info") => {
-      if (!message) return;
+    (type: NotificationType, message: string) => {
       const id = Date.now() + Math.random();
-      setItems((current) => [...current, { id, type, message }]);
-      // αυτόματο κλείσιμο μετά από 4"
-      setTimeout(() => remove(id), 4000);
+      setItems((prev) => [...prev, { id, type, message }]);
+      // auto-hide μετά από 3 δευτερόλεπτα
+      setTimeout(() => remove(id), 3000);
     },
     [remove]
   );
 
-  const value: NotificationsContextValue = {
-    notify: push,
-    notifySuccess: (msg) => push(msg, "success"),
-    notifyError: (msg) => push(msg, "error"),
-  };
+  const value = useMemo<NotificationContextValue>(
+    () => ({
+      notifySuccess: (msg: string) => push("success", msg),
+      notifyError: (msg: string) => push("error", msg),
+    }),
+    [push]
+  );
 
   return (
-    <NotificationsContext.Provider value={value}>
+    <NotificationContext.Provider value={value}>
       {children}
-      {/* Container για τα toasts */}
-      <div className="fixed inset-x-0 top-4 z-50 flex justify-center pointer-events-none">
-        <div className="w-full max-w-md px-4 space-y-2">
-          {items.map((n) => (
-            <div
-              key={n.id}
-              className={`pointer-events-auto rounded-xl border px-4 py-3 text-sm shadow-md ${
-                n.type === "success"
-                  ? "bg-green-50 border-green-200 text-green-900"
-                  : n.type === "error"
-                  ? "bg-red-50 border-red-200 text-red-900"
-                  : "bg-slate-50 border-slate-200 text-slate-900"
-              }`}
-            >
-              {n.message}
-            </div>
-          ))}
-        </div>
+      {/* Toast container */}
+      <div className="fixed bottom-4 right-4 z-50 space-y-2 max-w-xs">
+        {items.map((n) => (
+          <div
+            key={n.id}
+            className={`rounded-lg px-3 py-2 text-sm shadow-md cursor-pointer ${
+              n.type === "success"
+                ? "bg-emerald-600 text-white"
+                : "bg-red-600 text-white"
+            }`}
+            onClick={() => remove(n.id)}
+          >
+            {n.message}
+          </div>
+        ))}
       </div>
-    </NotificationsContext.Provider>
+    </NotificationContext.Provider>
   );
-};
+}
 
-export const useNotifications = (): NotificationsContextValue => {
-  const ctx = useContext(NotificationsContext);
+export function useNotification(): NotificationContextValue {
+  const ctx = useContext(NotificationContext);
   if (!ctx) {
-    throw new Error("useNotifications must be used within NotificationsProvider");
+    throw new Error("useNotification must be used within NotificationProvider");
   }
   return ctx;
-};
-
-// Alias για παλιό κώδικα που κάνει import useNotification
-export const useNotification = (): NotificationsContextValue => {
-  return useNotifications();
-};
+}
