@@ -164,14 +164,17 @@ export default function PropertyDetails() {
   const furnishedLabel = getFurnishedLabel(p.furnished);
 
     type TimelineKind = "created" | "updated" | "deleted";
+    const ev = (kind: TimelineKind, title: string, at?: string | null) => ({
+      kind,
+      title,
+      at,
+    });
     const timeline: Array<{ kind: TimelineKind; title: string; at?: string | null }> = [
-      { kind: "created", title: "Δημιουργήθηκε", at: p.createdAt ?? null },
+      ev("created", "Δημιουργήθηκε", p.createdAt ?? null),
       ...(p.updatedAt && p.updatedAt !== p.createdAt
-        ? [{ kind: "updated", title: "Ενημερώθηκε", at: p.updatedAt }]
+        ? [ev("updated", "Ενημερώθηκε", p.updatedAt)]
         : []),
-      ...(p.deletedAt
-        ? [{ kind: "deleted", title: "Έγινε soft delete", at: p.deletedAt }]
-        : []),
+      ...(p.deletedAt ? [ev("deleted", "Έγινε soft delete", p.deletedAt)] : []),
     ];
 
     const dotClass = (kind: TimelineKind) =>
