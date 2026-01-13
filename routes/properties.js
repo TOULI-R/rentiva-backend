@@ -1,7 +1,24 @@
 const express = require('express');
 const router = express.Router();
 const Property = require('../models/Property');
+const PropertyEvent = require('../models/PropertyEvent');
 const { validateObjectIdParam, requireBody } = require('../middleware/validate');
+
+async function logEvent({ propertyId, kind, title, message, actorId, meta }) {
+  try {
+    await PropertyEvent.create({
+      propertyId,
+      kind,
+      title,
+      message: message ?? undefined,
+      actorId: actorId ?? undefined,
+      meta: meta ?? {},
+    });
+  } catch (e) {
+    // δεν μπλοκάρουμε το βασικό flow αν αποτύχει το logging
+    console.error("PropertyEvent log failed:", e?.message || e);
+  }
+}
 
 // Λίστα (με pagination, search και με/χωρίς διαγεγραμμένα)
 router.get('/', async (req, res, next) => {
@@ -53,6 +70,39 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// Events timeline (Phase A)
+router.get('/:id/events', validateObjectIdParam('id'), async (req, res, next) => {
+  try {
+    let { limit = 20 } = req.query;
+    limit = parseInt(limit, 10);
+    if (isNaN(limit) || limit < 1) limit = 20;
+    if (limit > 100) limit = 100;
+
+    const items = await PropertyEvent.find({ propertyId: req.params.id })
+      .sort({ createdAt: -1 })
+      .limit(limit);
+
+    res.json({ items });
+  } catch (e) { next(e); }
+});
+
+// Manual note event (useful for testing)
+router.post('/:id/events', validateObjectIdParam('id'), requireBody(['title']), async (req, res, next) => {
+  try {
+    const actorId = req.user?.id || req.user?._id;
+    const ev = await PropertyEvent.create({
+      propertyId: req.params.id,
+      kind: 'note',
+      title: String(req.body.title).slice(0, 200),
+      message: typeof req.body.message === 'string' ? req.body.message.slice(0, 2000) : undefined,
+      actorId: actorId || undefined,
+      meta: req.body.meta && typeof req.body.meta === 'object' ? req.body.meta : {},
+    });
+    res.status(201).json(ev);
+  } catch (e) { next(e); }
+});
+
+
 // Λήψη ενός ακινήτου με id
 router.get('/:id', validateObjectIdParam('id'), async (req, res, next) => {
   try {
@@ -75,8 +125,10 @@ router.delete('/:id', validateObjectIdParam('id'), async (req, res, next) => {
       { new: true }
     );
     if (!p) return res.status(404).json({ error: 'Property not found' });
+    await logEvent({ propertyId: p._id, kind: 'deleted', title: 'Έγινε soft delete', actorId: req.user?.id || req.user?._id, meta: {} });
+
     res.json(p);
-  } catch (e) { next(e); }
+} catch (e) { next(e); }
 });
 
 // Restore handler (κοινός για PATCH και POST)
@@ -88,8 +140,10 @@ async function restoreHandler(req, res, next) {
       { new: true }
     );
     if (!p) return res.status(404).json({ error: 'Property not found' });
+    await logEvent({ propertyId: p._id, kind: 'restored', title: 'Έγινε restore', actorId: req.user?.id || req.user?._id, meta: {} });
+
     res.json(p);
-  } catch (e) { next(e); }
+} catch (e) { next(e); }
 }
 router.patch('/:id/restore', validateObjectIdParam('id'), restoreHandler);
 router.post('/:id/restore',  validateObjectIdParam('id'), restoreHandler);
@@ -170,7 +224,9 @@ router.patch('/:id', validateObjectIdParam('id'), async (req, res, next) => {
       updates.minimumContractMonths = req.body.minimumContractMonths;
     }
 
-    if (Object.keys(updates).length === 0) {
+    const changedFields = Object.keys(updates);
+
+      if (changedFields.length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' });
     }
 
@@ -181,8 +237,10 @@ router.patch('/:id', validateObjectIdParam('id'), async (req, res, next) => {
     );
 
     if (!p) return res.status(404).json({ error: 'Property not found' });
+    await logEvent({ propertyId: p._id, kind: 'updated', title: 'Ενημερώθηκε', actorId: req.user?.id || req.user?._id, meta: { changedFields } });
+
     res.json(p);
-  } catch (e) {
+} catch (e) {
     next(e);
   }
 });
@@ -226,8 +284,10 @@ router.post('/create-simple', requireBody(['title']), async (req, res, next) => 
       deletedAt: null,
       isDeleted: false,
     });
+    await logEvent({ propertyId: doc._id, kind: 'created', title: 'Δημιουργήθηκε', actorId: req.user?.id || req.user?._id, meta: {} });
+
     res.status(201).json(doc);
-  } catch (e) { next(e); }
+} catch (e) { next(e); }
 });
 
 module.exports = router;

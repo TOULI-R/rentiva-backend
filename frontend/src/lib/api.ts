@@ -132,6 +132,20 @@ export interface Property {
   updatedAt?: string;
 }
 
+export type PropertyEventKind = "created" | "updated" | "deleted" | "restored" | "note";
+
+export type PropertyEvent = {
+  _id: string;
+  propertyId: string;
+  kind: string;
+  title: string;
+  message?: string;
+  meta?: Record<string, any>;
+  actorId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type CreatePayload = {
   title: string;
   address: string;
@@ -239,6 +253,27 @@ const api = {
   delProperty,
   restoreProperty,
   updateProperty,
+
+  listPropertyEvents: async (id: string, opts?: { limit?: number }) => {
+    const limit = opts?.limit ?? 20;
+    const qs = new URLSearchParams();
+    qs.set("limit", String(limit));
+    const res = await request<{ items: PropertyEvent[] }>(
+      `/properties/${id}/events?${qs.toString()}`
+    );
+    return res.items;
+  },
+
+  addPropertyEventNote: async (
+    id: string,
+    payload: { title: string; message?: string; meta?: Record<string, any> }
+  ) => {
+    return request<PropertyEvent>(`/properties/${id}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  },
 };
 
 export default api;
