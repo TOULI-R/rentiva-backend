@@ -1,8 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Properties from "./pages/Properties";
+import PropertyDetails from "./pages/PropertyDetails";
 import { storage } from "./lib/api";
-import { NotificationsProvider } from "./lib/notifications";
+import { NotificationProvider } from "./lib/notifications";
 
 type RequireAuthProps = {
   children: JSX.Element;
@@ -20,7 +21,7 @@ export default function App() {
   const token = storage.getToken();
 
   return (
-    <NotificationsProvider>
+    <NotificationProvider>
       <BrowserRouter>
         <Routes>
           <Route
@@ -35,9 +36,17 @@ export default function App() {
               </RequireAuth>
             }
           />
+          <Route
+            path="/properties/:id"
+            element={
+              <RequireAuth>
+                <PropertyDetails />
+              </RequireAuth>
+            }
+          />
           <Route path="*" element={<Navigate to="/properties" replace />} />
         </Routes>
       </BrowserRouter>
-    </NotificationsProvider>
+    </NotificationProvider>
   );
 }
