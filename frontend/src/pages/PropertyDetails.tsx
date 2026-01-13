@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import Header from "../components/Header";
 import api, {
   type Property,
@@ -8,10 +8,25 @@ import api, {
   type ParkingType,
   type FurnishedType,
 } from "../lib/api";
+import { useNotification } from "../lib/notifications";
 
-type LocationState = {
-  property?: Property;
-};
+function formatNumber(n: number | undefined | null): string {
+  if (n == null || Number.isNaN(n)) return "—";
+  return String(n);
+}
+
+function formatDateTime(iso?: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("el-GR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 const heatingLabels: Record<HeatingType, string> = {
   none: "Χωρίς θέρμανση",
@@ -38,85 +53,86 @@ const furnishedLabels: Record<FurnishedType, string> = {
   full: "Πλήρως επιπλωμένο",
 };
 
-function formatNumber(n: number | undefined | null): string {
-  if (n == null || Number.isNaN(n)) return "—";
-  return String(n);
+function getHeatingLabel(type?: HeatingType): string {
+  if (!type) return "—";
+  return heatingLabels[type] ?? "—";
 }
 
-export function PropertyDetails() {
+function getParkingLabel(type?: ParkingType): string {
+  if (!type) return "—";
+  return parkingLabels[type] ?? "—";
+}
+
+function getFurnishedLabel(type?: FurnishedType): string {
+  if (!type || type === "none") return "Μη επιπλωμένο";
+  return furnishedLabels[type] ?? "Μη επιπλωμένο";
+}
+
+export default function PropertyDetails() {
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const location = useLocation();
-  const params = useParams<{ id: string }>();
+  const { notifyError } = useNotification();
 
-  const state = location.state as LocationState | null;
-  const initialProperty = state?.property ?? null;
+  const [property, setProperty] = useState<Property | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const [property, setProperty] = useState<Property | null>(initialProperty);
-  const [loading, setLoading] = useState(!initialProperty && !!params.id);
-  const [err, setErr] = useState<string | null>(null);
-
-  // Αν δεν έχουμε state.property αλλά έχουμε id, κάνουμε fetch από API
   useEffect(() => {
-    const id = params.id;
-    if (!id || initialProperty) return;
+    if (!id) {
+      notifyError("Δεν βρέθηκε ID ακινήτου.");
+      navigate("/properties");
+      return;
+    }
 
     let cancelled = false;
-    setLoading(true);
-    setErr(null);
 
-    api
-      .getProperty(id)
-      .then((p) => {
-        if (!cancelled) setProperty(p);
-      })
-      .catch((e: any) => {
+    (async () => {
+      try {
+        const p = await (api as any).getProperty(id);
         if (!cancelled) {
-          setErr(e?.message || "Αποτυχία φόρτωσης ακινήτου.");
+          setProperty(p);
         }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      } catch (e: any) {
+        if (!cancelled) {
+          notifyError(e?.message || "Αποτυχία φόρτωσης ακινήτου.");
+          navigate("/properties");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [params.id, initialProperty]);
+  }, [id, navigate, notifyError]);
 
-  if (!property && !loading) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Header />
-        <main className="mx-auto max-w-3xl px-4 py-6 space-y-4">
-          <button
-            type="button"
-            onClick={() => navigate("/properties")}
-            className="text-sm px-3 py-1.5 rounded-xl border bg-white hover:bg-gray-50"
-          >
-            ← Πίσω στη λίστα
-          </button>
-          <div className="bg-white border rounded-xl p-4 text-sm text-gray-700">
-            {err || "Δεν βρέθηκαν στοιχεία για το ακίνητο."}
-          </div>
+        <main className="mx-auto max-w-4xl px-4 py-6">
+          <div className="animate-pulse bg-white rounded-xl shadow h-48" />
         </main>
       </div>
     );
   }
 
-  if (!property || loading) {
+  if (!property) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Header />
-        <main className="mx-auto max-w-3xl px-4 py-6 space-y-4">
+        <main className="mx-auto max-w-4xl px-4 py-6 space-y-4">
           <button
             type="button"
             onClick={() => navigate("/properties")}
-            className="text-sm px-3 py-1.5 rounded-xl border bg-white hover:bg-gray-50"
+            className="text-sm text-gray-600 hover:underline"
           >
-            ← Πίσω στη λίστα
+            ← Επιστροφή στη λίστα
           </button>
-          <div className="bg-white rounded-xl shadow p-4 text-sm text-gray-600">
-            Φόρτωση στοιχείων ακινήτου...
+          <div className="bg-white rounded-xl shadow p-4 text-sm text-gray-700">
+            Δεν βρέθηκε το ακίνητο.
           </div>
         </main>
       </div>
@@ -124,7 +140,6 @@ export function PropertyDetails() {
   }
 
   const p = property;
-
   const isDeleted = !!p.deletedAt;
 
   const baseRent =
@@ -134,102 +149,96 @@ export function PropertyDetails() {
       ? p.commonCharges
       : null;
   const otherFixed =
-    typeof p.otherFixedCosts === "number" &&
-    !Number.isNaN(p.otherFixedCosts)
+    typeof p.otherFixedCosts === "number" && !Number.isNaN(p.otherFixedCosts)
       ? p.otherFixedCosts
       : null;
-  const approxTotal =
-    baseRent !== null
-      ? baseRent + (commonCharges || 0) + (otherFixed || 0)
-      : null;
 
-  const heatingLabel = p.heatingType
-    ? heatingLabels[p.heatingType]
-    : heatingLabels.none;
+  let approxTotal: number | null = null;
+  if (baseRent !== null) {
+    approxTotal =
+      baseRent + (commonCharges ?? 0) + (otherFixed ?? 0);
+  }
 
-  const parkingLabel =
-    p.parking && p.parking !== "none" ? parkingLabels[p.parking] : null;
-
-  const furnishedLabel = p.furnished
-    ? furnishedLabels[p.furnished]
-    : furnishedLabels.none;
+  const heatingLabel = getHeatingLabel(p.heatingType);
+  const parkingLabel = getParkingLabel(p.parking);
+  const furnishedLabel = getFurnishedLabel(p.furnished);
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      <main className="mx-auto max-w-3xl px-4 py-6 space-y-4">
+      <main className="mx-auto max-w-4xl px-4 py-6 space-y-4">
         <button
           type="button"
-          onClick={() => navigate(-1)}
-          className="text-sm px-3 py-1.5 rounded-xl border bg-white hover:bg-gray-50"
+          onClick={() => navigate("/properties")}
+          className="text-sm text-gray-600 hover:underline"
         >
-          ← Πίσω
+          ← Επιστροφή στη λίστα
         </button>
 
-        <div className="bg-white rounded-xl shadow p-4 space-y-4">
-          {/* Τίτλος + διεύθυνση + status */}
-          <div className="flex items-start justify-between gap-3">
+        <div className="bg-white rounded-xl shadow p-4 sm:p-6 space-y-4">
+          {/* Τίτλος / διεύθυνση / status */}
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div>
-              <div className="text-lg font-semibold text-gray-900">
-                {p.title || "-"}
-              </div>
+              <h1 className="text-lg sm:text-xl font-semibold text-gray-900">
+                {p.title || "Χωρίς τίτλο"}
+              </h1>
               <div className="text-sm text-gray-600">
-                {p.address || "—"}
+                {p.address || "Χωρίς διεύθυνση"}
+              </div>
+              <div className="mt-1 text-xs text-gray-500">
+                ID: {p._id}
               </div>
             </div>
-            <span
-              className={`inline-block text-xs px-2 py-1 rounded-full ${
-                isDeleted
-                  ? "bg-red-100 text-red-700"
-                  : "bg-green-100 text-green-700"
-              }`}
-            >
-              {isDeleted ? "Deleted" : "Active"}
-            </span>
-          </div>
-
-          {/* Οικονομικά */}
-          <div className="bg-gray-50 rounded-lg px-3 py-2 space-y-1">
-            <div className="text-sm text-gray-900">
-              <span className="font-medium">Ενοίκιο:</span>{" "}
-              {baseRent !== null ? `${baseRent} € / μήνα` : "—"}
-            </div>
-            {(commonCharges !== null ||
-              otherFixed !== null ||
-              p.depositMonths != null) && (
-              <div className="text-xs text-gray-600">
-                {commonCharges !== null && `Κοιν: ${commonCharges}€`}
-                {commonCharges !== null && otherFixed !== null && " · "}
-                {otherFixed !== null && `Άλλα: ${otherFixed}€`}
-                {(commonCharges !== null || otherFixed !== null) &&
-                  p.depositMonths != null &&
-                  " · "}
-                {p.depositMonths != null &&
-                  `Εγγύηση: ${p.depositMonths}μ.`}
-              </div>
-            )}
-            {approxTotal !== null &&
-              (commonCharges !== null || otherFixed !== null) && (
-                <div className="text-xs text-gray-800 font-medium">
-                  ≈ {approxTotal} €/μήνα συνολικά
+            <div className="flex flex-col items-start sm:items-end gap-2">
+              <span
+                className={`inline-block text-xs px-2 py-1 rounded-full ${
+                  isDeleted
+                    ? "bg-red-100 text-red-700"
+                    : "bg-green-100 text-green-700"
+                }`}
+              >
+                {isDeleted ? "Deleted" : "Active"}
+              </span>
+              {baseRent !== null && (
+                <div className="text-right">
+                  <div className="text-sm text-gray-600">Ενοίκιο</div>
+                  <div className="text-lg font-semibold text-gray-900">
+                    {baseRent} € / μήνα
+                  </div>
+                  {(commonCharges !== null || otherFixed !== null) && (
+                    <div className="mt-1 text-xs text-gray-500">
+                      {commonCharges !== null &&
+                        `Κοιν: ${commonCharges}€`}
+                      {commonCharges !== null &&
+                        otherFixed !== null &&
+                        " · "}
+                      {otherFixed !== null &&
+                        `Άλλα: ${otherFixed}€`}
+                    </div>
+                  )}
+                  {approxTotal !== null &&
+                    (commonCharges !== null || otherFixed !== null) && (
+                      <div className="text-xs text-gray-800 font-medium">
+                        ≈ {approxTotal} €/μήνα συνολικά
+                      </div>
+                    )}
+                  {p.billsIncluded && (
+                    <div className="text-[11px] text-emerald-600 mt-1">
+                      Περιλαμβάνονται λογαριασμοί
+                    </div>
+                  )}
                 </div>
               )}
-            {p.billsIncluded && (
-              <div className="text-[11px] text-emerald-600">
-                Περιλαμβάνονται λογαριασμοί (ρεύμα/νερό/θέρμανση)
-              </div>
-            )}
+            </div>
           </div>
 
-          {/* Βασικά & Κτίριο */}
-          <div className="grid gap-3 md:grid-cols-2 text-sm text-gray-800">
-            <div className="space-y-1">
-              <div className="font-semibold text-gray-900">
-                Βασικά στοιχεία
-              </div>
+          {/* Βασικά στοιχεία + κτίριο */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1 text-sm text-gray-800">
+              <div className="font-semibold text-gray-900">Βασικά</div>
               <div>
-                <span className="font-medium">Εμβαδό:</span>{" "}
-                {formatNumber(p.size)} τ.μ.
+                <span className="font-medium">Τ.μ.:</span>{" "}
+                {formatNumber(p.size)}
               </div>
               <div>
                 <span className="font-medium">Όροφος:</span>{" "}
@@ -251,7 +260,7 @@ export function PropertyDetails() {
               </div>
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1 text-sm text-gray-800">
               <div className="font-semibold text-gray-900">Κτίριο</div>
               <div>
                 <span className="font-medium">Έτος κατασκευής:</span>{" "}
@@ -272,7 +281,7 @@ export function PropertyDetails() {
               <div>
                 <span className="font-medium">Ενεργειακή κλάση:</span>{" "}
                 {p.energyClass && p.energyClass !== "unknown"
-                  ? p.energyClass
+                  ? (p.energyClass as EnergyClass)
                   : "—"}
               </div>
               <div>
@@ -308,6 +317,16 @@ export function PropertyDetails() {
               <p>{p.description}</p>
             </div>
           )}
+
+          {/* Ημερομηνίες */}
+          <div className="pt-3 border-t text-xs text-gray-500 space-y-1">
+            <div>Δημιουργήθηκε: {formatDateTime(p.createdAt)}</div>
+            {p.updatedAt && p.updatedAt !== p.createdAt && (
+              <div>
+                Τελευταία ενημέρωση: {formatDateTime(p.updatedAt)}
+              </div>
+            )}
+          </div>
         </div>
       </main>
     </div>

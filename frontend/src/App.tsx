@@ -1,12 +1,13 @@
+import type { ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Properties from "./pages/Properties";
-import { PropertyDetails } from "./pages/PropertyDetails";
+import PropertyDetails from "./pages/PropertyDetails";
 import { storage } from "./lib/api";
 import { NotificationProvider } from "./lib/notifications";
 
 type RequireAuthProps = {
-  children: JSX.Element;
+  children: ReactNode;
 };
 
 function RequireAuth({ children }: RequireAuthProps) {
@@ -26,9 +27,7 @@ export default function App() {
         <Routes>
           <Route
             path="/login"
-            element={
-              token ? <Navigate to="/properties" replace /> : <Login />
-            }
+            element={token ? <Navigate to="/properties" replace /> : <Login />}
           />
           <Route
             path="/properties"
