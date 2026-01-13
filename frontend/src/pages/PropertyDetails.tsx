@@ -163,6 +163,24 @@ export default function PropertyDetails() {
   const parkingLabel = getParkingLabel(p.parking);
   const furnishedLabel = getFurnishedLabel(p.furnished);
 
+    type TimelineKind = "created" | "updated" | "deleted";
+    const timeline: Array<{ kind: TimelineKind; title: string; at?: string | null }> = [
+      { kind: "created", title: "Δημιουργήθηκε", at: p.createdAt ?? null },
+      ...(p.updatedAt && p.updatedAt !== p.createdAt
+        ? [{ kind: "updated", title: "Ενημερώθηκε", at: p.updatedAt }]
+        : []),
+      ...(p.deletedAt
+        ? [{ kind: "deleted", title: "Έγινε soft delete", at: p.deletedAt }]
+        : []),
+    ];
+
+    const dotClass = (kind: TimelineKind) =>
+      kind === "deleted"
+        ? "bg-red-500"
+        : kind === "updated"
+        ? "bg-amber-500"
+        : "bg-emerald-500";
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
@@ -318,7 +336,47 @@ export default function PropertyDetails() {
             </div>
           )}
 
-          {/* Ημερομηνίες */}
+          
+            {/* Timeline (preview) */}
+            <div className="pt-3 border-t">
+              <div className="flex items-center justify-between">
+                <div className="font-semibold text-gray-900 text-sm">
+                  Timeline (προσεχώς)
+                </div>
+                <div className="text-xs text-gray-500">Radical Transparency</div>
+              </div>
+
+              <div className="mt-3 space-y-3">
+                <div className="space-y-3">
+                  {timeline.map((ev, idx) => (
+                    <div key={ev.kind + "-" + idx} className="relative pl-6">
+                      <div
+                        className={
+                          "absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full " +
+                          dotClass(ev.kind)
+                        }
+                      />
+                      {idx !== timeline.length - 1 && (
+                        <div className="absolute left-[4px] top-4 h-full w-px bg-gray-200" />
+                      )}
+                      <div className="text-sm text-gray-800">
+                        <div className="font-medium">{ev.title}</div>
+                        <div className="text-xs text-gray-500">
+                          {formatDateTime(ev.at ?? null)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="text-xs text-gray-500">
+                  Σύντομα θα βλέπεις εδώ γεγονότα (π.χ. αλλαγές τιμής, επισκέψεις,
+                  επισκευές) για το ακίνητο.
+                </div>
+              </div>
+            </div>
+
+{/* Ημερομηνίες */}
           <div className="pt-3 border-t text-xs text-gray-500 space-y-1">
             <div>Δημιουργήθηκε: {formatDateTime(p.createdAt)}</div>
             {p.updatedAt && p.updatedAt !== p.createdAt && (
