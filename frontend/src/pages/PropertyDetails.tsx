@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Header from "../components/Header";
 import api, {
   type Property,
+  type PropertyEvent,
+  type PropertyEventKind,
   type HeatingType,
   type EnergyClass,
   type ParkingType,
@@ -76,6 +78,15 @@ export default function PropertyDetails() {
   const [property, setProperty] = useState<Property | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [events, setEvents] = useState<PropertyEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteMessage, setNoteMessage] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteSaved, setNoteSaved] = useState(false);
+
   useEffect(() => {
     if (!id) {
       notifyError("Δεν βρέθηκε ID ακινήτου.");
@@ -87,7 +98,7 @@ export default function PropertyDetails() {
 
     (async () => {
       try {
-        const p = await (api as any).getProperty(id);
+        const p = await api.getProperty(id);
         if (!cancelled) {
           setProperty(p);
         }
@@ -107,6 +118,31 @@ export default function PropertyDetails() {
       cancelled = true;
     };
   }, [id, navigate, notifyError]);
+
+  
+  useEffect(() => {
+    if (!id) return;
+
+    let cancelled = false;
+
+    setEventsLoading(true);
+    setEventsError(null);
+
+    (async () => {
+      try {
+        const items = await api.listPropertyEvents(id, { limit: 30 });
+        if (!cancelled) setEvents(items);
+      } catch (e: any) {
+        if (!cancelled) setEventsError((e as any)?.message || "Αποτυχία φόρτωσης timeline.");
+      } finally {
+        if (!cancelled) setEventsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   if (loading) {
     return (
@@ -162,27 +198,93 @@ export default function PropertyDetails() {
   const heatingLabel = getHeatingLabel(p.heatingType);
   const parkingLabel = getParkingLabel(p.parking);
   const furnishedLabel = getFurnishedLabel(p.furnished);
+  const kindLabel = (kind: PropertyEventKind): string => {
+    switch (kind) {
+      case "created":
+        return "Δημιουργήθηκε";
+      case "updated":
+        return "Ενημερώθηκε";
+      case "deleted":
+        return "Έγινε soft delete";
+      case "restored":
+        return "Έγινε επαναφορά";
+      case "note":
+        return "Σημείωση";
+      default:
+        return "Γεγονός";
+    }
+  };
 
-    type TimelineKind = "created" | "updated" | "deleted";
-    const ev = (kind: TimelineKind, title: string, at?: string | null) => ({
-      kind,
-      title,
-      at,
-    });
-    const timeline: Array<{ kind: TimelineKind; title: string; at?: string | null }> = [
-      ev("created", "Δημιουργήθηκε", p.createdAt ?? null),
-      ...(p.updatedAt && p.updatedAt !== p.createdAt
-        ? [ev("updated", "Ενημερώθηκε", p.updatedAt)]
-        : []),
-      ...(p.deletedAt ? [ev("deleted", "Έγινε soft delete", p.deletedAt)] : []),
-    ];
+  const dotClass = (kind: PropertyEventKind) =>
+    kind === "deleted"
+      ? "bg-red-500"
+      : kind === "updated"
+      ? "bg-amber-500"
+      : kind === "restored"
+      ? "bg-sky-500"
+      : kind === "note"
+      ? "bg-gray-500"
+      : "bg-emerald-500";
 
-    const dotClass = (kind: TimelineKind) =>
-      kind === "deleted"
-        ? "bg-red-500"
-        : kind === "updated"
-        ? "bg-amber-500"
-        : "bg-emerald-500";
+  const formatChangedFields = (meta: any): string | null => {
+    const fields = meta?.changedFields;
+    if (!Array.isArray(fields) || fields.length === 0) return null;
+
+    const labels: Record<string, string> = {
+      title: "Τίτλος",
+      address: "Διεύθυνση",
+      rent: "Ενοίκιο",
+      commonCharges: "Κοινόχρηστα",
+      otherFixedCosts: "Άλλα πάγια",
+      billsIncluded: "Λογαριασμοί",
+      depositMonths: "Εγγύηση (μήνες)",
+      minimumContractMonths: "Ελάχιστη διάρκεια",
+      size: "Τ.μ.",
+      floor: "Όροφος",
+      bedrooms: "Υπνοδωμάτια",
+      bathrooms: "Μπάνια",
+      yearBuilt: "Έτος κατασκευής",
+      yearRenovated: "Έτος ανακαίνισης",
+      heatingType: "Θέρμανση",
+      energyClass: "Ενεργειακή κλάση",
+      parking: "Parking",
+      elevator: "Ασανσέρ",
+      furnished: "Επίπλωση",
+      petsAllowed: "Κατοικίδια",
+      description: "Περιγραφή",
+      status: "Κατάσταση",
+    };
+
+    const nice = fields.map((f) => labels[String(f)] ?? String(f));
+    return "Αλλαγές: " + nice.join(", ");
+  };
+
+  const onSubmitNote = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!id) return;
+
+    const title = noteTitle.trim();
+    const message = noteMessage.trim();
+    if (!title) return;
+
+    setNoteSaving(true);
+    try {
+      const created = await api.addPropertyEventNote(id, {
+        title,
+        message: message ? message : undefined,
+      });
+
+      setEvents((prev) => [created, ...prev]);
+      setNoteTitle("");
+      setNoteMessage("");
+      setNoteSaved(true);
+      setTimeout(() => setNoteSaved(false), 1800);
+    } catch (err: any) {
+      notifyError((err as any)?.message || "Αποτυχία αποθήκευσης σημείωσης.");
+    } finally {
+      setNoteSaving(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -339,47 +441,117 @@ export default function PropertyDetails() {
             </div>
           )}
 
-          
-            {/* Timeline (preview) */}
-            <div className="pt-3 border-t">
-              <div className="flex items-center justify-between">
-                <div className="font-semibold text-gray-900 text-sm">
-                  Timeline (προσεχώς)
-                </div>
-                <div className="text-xs text-gray-500">Radical Transparency</div>
-              </div>
-
-              <div className="mt-3 space-y-3">
-                <div className="space-y-3">
-                  {timeline.map((ev, idx) => (
-                    <div key={ev.kind + "-" + idx} className="relative pl-6">
-                      <div
-                        className={
-                          "absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full " +
-                          dotClass(ev.kind)
-                        }
-                      />
-                      {idx !== timeline.length - 1 && (
-                        <div className="absolute left-[4px] top-4 h-full w-px bg-gray-200" />
-                      )}
-                      <div className="text-sm text-gray-800">
-                        <div className="font-medium">{ev.title}</div>
-                        <div className="text-xs text-gray-500">
-                          {formatDateTime(ev.at ?? null)}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="text-xs text-gray-500">
-                  Σύντομα θα βλέπεις εδώ γεγονότα (π.χ. αλλαγές τιμής, επισκέψεις,
-                  επισκευές) για το ακίνητο.
-                </div>
-              </div>
+          {/* Timeline */}
+          <div className="pt-3 border-t">
+            <div className="flex items-center justify-between">
+              <div className="font-semibold text-gray-900 text-sm">Timeline</div>
+              <div className="text-xs text-gray-500">Radical Transparency</div>
             </div>
 
+            <div className="mt-3 space-y-3">
+              {eventsLoading ? (
+                <div className="space-y-2">
+                  <div className="h-10 bg-gray-100 rounded-lg animate-pulse" />
+                  <div className="h-10 bg-gray-100 rounded-lg animate-pulse" />
+                  <div className="h-10 bg-gray-100 rounded-lg animate-pulse" />
+                </div>
+              ) : eventsError ? (
+                <div className="text-xs text-red-600">{eventsError}</div>
+              ) : events.length === 0 ? (
+                <div className="text-xs text-gray-500">
+                  Δεν υπάρχουν ακόμα γεγονότα για αυτό το ακίνητο.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {events.map((ev, idx) => {
+                    const changed =
+                      ev.kind === "updated" ? formatChangedFields(ev.meta) : null;
+
+                    return (
+                      <div key={ev._id || ev.kind + "-" + idx} className="relative pl-6">
+                        <div
+                          className={
+                            "absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full " +
+                            dotClass(ev.kind as PropertyEventKind)
+                          }
+                        />
+                        {idx !== events.length - 1 && (
+                          <div className="absolute left-[4px] top-4 h-full w-px bg-gray-200" />
+                        )}
+
+                        <div className="text-sm text-gray-800">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="font-medium">
+                              {ev.title || kindLabel(ev.kind as PropertyEventKind)}
+                            </div>
+                            <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                              {kindLabel(ev.kind as PropertyEventKind)}
+                            </span>
+                          </div>
+
+                          <div className="text-xs text-gray-500">
+                            {formatDateTime(ev.createdAt)}
+                          </div>
+
+                          {changed && (
+                            <div className="mt-1 text-xs text-gray-700">
+                              {changed}
+                            </div>
+                          )}
+
+                          {ev.message && (
+                            <div className="mt-1 text-xs text-gray-700 whitespace-pre-wrap">
+                              {ev.message}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Add note */}
+              <div className="pt-3 border-t">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold text-gray-900">
+                    Προσθήκη σημείωσης
+                  </div>
+                  {noteSaved && (
+                    <div className="text-xs text-emerald-600 font-medium">
+                      Αποθηκεύτηκε ✓
+                    </div>
+                  )}
+                </div>
+
+                <form onSubmit={onSubmitNote} className="mt-2 space-y-2">
+                  <input
+                    value={noteTitle}
+                    onChange={(e) => setNoteTitle(e.target.value)}
+                    placeholder="Τίτλος"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
+                  />
+                  <textarea
+                    value={noteMessage}
+                    onChange={(e) => setNoteMessage(e.target.value)}
+                    placeholder="Μήνυμα (προαιρετικό)"
+                    rows={3}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
+                  />
+                  <button
+                    type="submit"
+                    disabled={noteSaving || !noteTitle.trim()}
+                    className="w-full sm:w-auto inline-flex items-center justify-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                  >
+                    {noteSaving ? "Αποθήκευση..." : "Αποθήκευση σημείωσης"}
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+
 {/* Ημερομηνίες */}
+
           <div className="pt-3 border-t text-xs text-gray-500 space-y-1">
             <div>Δημιουργήθηκε: {formatDateTime(p.createdAt)}</div>
             {p.updatedAt && p.updatedAt !== p.createdAt && (
