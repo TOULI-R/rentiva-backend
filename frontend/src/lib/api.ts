@@ -31,7 +31,7 @@ async function request<T = any>(
   const token = storage.getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  const res = await fetch(`${BASE}${path}`, { cache: "no-store", ...options, headers });
 
   // 401 => ληγμένο / άκυρο token
   if (res.status === 401) {
