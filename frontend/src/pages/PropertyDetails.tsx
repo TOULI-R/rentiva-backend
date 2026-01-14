@@ -86,6 +86,7 @@ export default function PropertyDetails() {
   const [noteMessage, setNoteMessage] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
+  const [timelineFilter, setTimelineFilter] = useState<"all" | "note" | "updated">("all");
 
   useEffect(() => {
     if (!id) {
@@ -145,7 +146,14 @@ export default function PropertyDetails() {
   }, [id]);
 
   if (loading) {
-    return (
+  const filteredEvents = events.filter((ev) => {
+    if (timelineFilter === "all") return true;
+    if (timelineFilter === "note") return ev.kind === "note";
+    if (timelineFilter === "updated") return ev.kind === "updated";
+    return true;
+  });
+
+  return (
       <div className="min-h-screen bg-gray-50">
         <Header />
         <main className="mx-auto max-w-4xl px-4 py-6">
@@ -443,9 +451,50 @@ export default function PropertyDetails() {
 
           {/* Timeline */}
           <div className="pt-3 border-t">
-            <div className="flex items-center justify-between">
-              <div className="font-semibold text-gray-900 text-sm">Timeline</div>
-              <div className="text-xs text-gray-500">Radical Transparency</div>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="font-semibold text-gray-900 text-sm">Timeline</div>
+                <div className="text-xs text-gray-500">Radical Transparency</div>
+              </div>
+
+              <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => setTimelineFilter("all")}
+                  className={
+                    "px-2 py-1 text-[11px] rounded-md " +
+                    (timelineFilter === "all"
+                      ? "bg-white shadow text-gray-900"
+                      : "text-gray-600")
+                  }
+                >
+                  Όλα
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTimelineFilter("updated")}
+                  className={
+                    "px-2 py-1 text-[11px] rounded-md " +
+                    (timelineFilter === "updated"
+                      ? "bg-white shadow text-gray-900"
+                      : "text-gray-600")
+                  }
+                >
+                  Updates
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTimelineFilter("note")}
+                  className={
+                    "px-2 py-1 text-[11px] rounded-md " +
+                    (timelineFilter === "note"
+                      ? "bg-white shadow text-gray-900"
+                      : "text-gray-600")
+                  }
+                >
+                  Notes
+                </button>
+              </div>
             </div>
 
             <div className="mt-3 space-y-3">
@@ -457,13 +506,13 @@ export default function PropertyDetails() {
                 </div>
               ) : eventsError ? (
                 <div className="text-xs text-red-600">{eventsError}</div>
-              ) : events.length === 0 ? (
+              ) : filteredEvents.length === 0 ? (
                 <div className="text-xs text-gray-500">
                   Δεν υπάρχουν ακόμα γεγονότα για αυτό το ακίνητο.
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {events.map((ev, idx) => {
+                  {filteredEvents.map((ev, idx) => {
                     const changed =
                       ev.kind === "updated" ? formatChangedFields(ev.meta) : null;
 
@@ -475,7 +524,7 @@ export default function PropertyDetails() {
                             dotClass(ev.kind as PropertyEventKind)
                           }
                         />
-                        {idx !== events.length - 1 && (
+                        {idx !== filteredEvents.length - 1 && (
                           <div className="absolute left-[4px] top-4 h-full w-px bg-gray-200" />
                         )}
 
