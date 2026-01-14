@@ -30,6 +30,39 @@ function formatDateTime(iso?: string | null): string {
   });
 }
 
+function dayKey(iso?: string | null): string {
+  if (!iso) return "unknown";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "unknown";
+  // local date (so "Σήμερα/Χθες" matches user's timezone)
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function groupLabelFromDayKey(key: string): string {
+  if (key === "unknown") return "Άγνωστη ημερομηνία";
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  const d = new Date(key + "T00:00:00");
+  const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  if (dd.getTime() === today.getTime()) return "Σήμερα";
+  if (dd.getTime() === yesterday.getTime()) return "Χθες";
+
+  return dd.toLocaleDateString("el-GR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+
 const heatingLabels: Record<HeatingType, string> = {
   none: "Χωρίς θέρμανση",
   central_oil: "Κεντρική πετρέλαιο",
@@ -513,64 +546,87 @@ export default function PropertyDetails() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {filteredEvents.map((ev, idx) => {
-                    const changed =
-                      ev.kind === "updated" ? formatChangedFields(ev.meta) : null;
+                  {(() => {
+                    const groups: Array<{ key: string; label: string; items: typeof filteredEvents }> = [];
+                    for (const ev of filteredEvents) {
+                      const key = dayKey(ev.createdAt);
+                      const label = groupLabelFromDayKey(key);
+                      const last = groups[groups.length - 1];
+                      if (!last || last.key !== key) {
+                        groups.push({ key, label, items: [ev] as any });
+                      } else {
+                        (last.items as any).push(ev);
+                      }
+                    }
 
-                    return (
-                      <div key={ev._id || ev.kind + "-" + idx} className="relative pl-6">
-                        <div
-                          className={
-                            "absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full " +
-                            dotClass(ev.kind as PropertyEventKind)
-                          }
-                        />
-                        {idx !== filteredEvents.length - 1 && (
-                          <div className="absolute left-[4px] top-4 h-full w-px bg-gray-200" />
-                        )}
+                    return groups.map((g) => (
+                      <div key={g.key} className="space-y-2">
+                        <div className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">
+                          {g.label}
+                        </div>
 
-                        <div className="text-sm text-gray-800">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="font-medium">
-                              {ev.title || kindLabel(ev.kind as PropertyEventKind)}
-                            </div>
-                            <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                              {kindLabel(ev.kind as PropertyEventKind)}
-                            </span>
-                          </div>
+                        <div className="space-y-3">
+                          {g.items.map((ev, idx) => {
+                            const changed =
+                              ev.kind === "updated" ? formatChangedFields(ev.meta) : null;
 
-                          <div className="text-xs text-gray-500">
-                            {formatDateTime(ev.createdAt)}
-                          </div>
+                            return (
+                              <div key={ev._id || ev.kind + "-" + idx} className="relative pl-6">
+                                <div
+                                  className={
+                                    "absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full " +
+                                    dotClass(ev.kind as PropertyEventKind)
+                                  }
+                                />
+                                {idx !== g.items.length - 1 && (
+                                  <div className="absolute left-[4px] top-4 h-full w-px bg-gray-200" />
+                                )}
 
-                          {changed && (
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              {changed.slice(0, 6).map((label, i) => (
-                                <span
-                                  key={label + "-" + i}
-                                  className="inline-flex items-center rounded-full bg-amber-50 text-amber-800 border border-amber-100 px-2 py-0.5 text-[11px] font-medium"
-                                >
-                                  {label}
-                                </span>
-                              ))}
-                              {changed.length > 6 && (
-                                <span className="text-[11px] text-gray-600">
-                                  +{changed.length - 6} ακόμη
-                                </span>
-                              )}
-                            </div>
-                          )}
+                                <div className="text-sm text-gray-800">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="font-medium">
+                                      {ev.title || kindLabel(ev.kind as PropertyEventKind)}
+                                    </div>
+                                    <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                                      {kindLabel(ev.kind as PropertyEventKind)}
+                                    </span>
+                                  </div>
 
-                          {ev.message && (
-                            <div className="mt-1 text-xs text-gray-700 whitespace-pre-wrap">
-                              {ev.message}
-                            </div>
-                          )}
+                                  <div className="text-xs text-gray-500">
+                                    {formatDateTime(ev.createdAt)}
+                                  </div>
+
+                                  {changed && (
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                      {changed.slice(0, 6).map((label, i) => (
+                                        <span
+                                          key={label + "-" + i}
+                                          className="inline-flex items-center rounded-full bg-amber-50 text-amber-800 border border-amber-100 px-2 py-0.5 text-[11px] font-medium"
+                                        >
+                                          {label}
+                                        </span>
+                                      ))}
+                                      {changed.length > 6 && (
+                                        <span className="text-[11px] text-gray-600">
+                                          +{changed.length - 6} ακόμη
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {ev.message && (
+                                    <div className="mt-1 text-xs text-gray-700 whitespace-pre-wrap">
+                                      {ev.message}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
+                    ));
+                  })()}                </div>
               )}
 
               {/* Add note */}
