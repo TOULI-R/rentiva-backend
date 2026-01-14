@@ -63,6 +63,38 @@ function groupLabelFromDayKey(key: string): string {
 }
 
 
+function highlightText(text: string, q: string): Array<string | JSX.Element> {
+  const query = q.trim();
+  if (query.length < 2) return [text];
+  const lower = text.toLowerCase();
+  const ql = query.toLowerCase();
+
+  const out: Array<string | JSX.Element> = [];
+  let i = 0;
+  let hit = 0;
+
+  while (i < text.length) {
+    const idx = lower.indexOf(ql, i);
+    if (idx === -1) {
+      out.push(text.slice(i));
+      break;
+    }
+    if (idx > i) out.push(text.slice(i, idx));
+    out.push(
+      <mark
+        key={"h-" + hit++}
+        className="rounded bg-yellow-100 px-0.5 text-gray-900"
+      >
+        {text.slice(idx, idx + query.length)}
+      </mark>
+    );
+    i = idx + query.length;
+  }
+
+  return out.length ? out : [text];
+}
+
+
 const heatingLabels: Record<HeatingType, string> = {
   none: "Χωρίς θέρμανση",
   central_oil: "Κεντρική πετρέλαιο",
@@ -664,7 +696,7 @@ export default function PropertyDetails() {
                                 <div className="text-sm text-gray-800">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="font-medium">
-                                      {ev.title || kindLabel(ev.kind as PropertyEventKind)}
+                                      {ev.title ? highlightText(ev.title, timelineQuery) : kindLabel(ev.kind as PropertyEventKind)}
                                     </div>
                                     <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
                                       {kindLabel(ev.kind as PropertyEventKind)}
@@ -695,7 +727,7 @@ export default function PropertyDetails() {
 
                                   {ev.message && (
                                     <div className="mt-1 text-xs text-gray-700 whitespace-pre-wrap">
-                                      {ev.message}
+                                      {highlightText(ev.message, timelineQuery)}
                                     </div>
                                   )}
                                 </div>
