@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import Header from "../components/Header";
 import api, {
   type Property,
@@ -138,6 +138,39 @@ function getFurnishedLabel(type?: FurnishedType): string {
 export default function PropertyDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const [timelineFilter, setTimelineFilter] = useState<"all" | "note" | "updated">(() => {
+    const tf = searchParams.get("tf");
+    return tf === "note" || tf === "updated" ? tf : "all";
+  });
+
+  const [timelineQuery, setTimelineQuery] = useState(() => searchParams.get("tq") || "");
+
+  // sync timeline controls from URL (refresh + back/forward)
+  useEffect(() => {
+    const tf = searchParams.get("tf");
+    const nextTf: "all" | "note" | "updated" =
+      tf === "note" || tf === "updated" ? tf : "all";
+    const nextTq = searchParams.get("tq") || "";
+
+    if (nextTf !== timelineFilter) setTimelineFilter(nextTf);
+    if (nextTq !== timelineQuery) setTimelineQuery(nextTq);
+  }, [searchParams]); 
+
+  // sync timeline controls to URL (so refresh keeps state)
+  useEffect(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("tf", timelineFilter);
+
+      const q = timelineQuery.trim();
+      if (q) next.set("tq", q);
+      else next.delete("tq");
+
+      return next;
+    }, { replace: true });
+  }, [timelineFilter, timelineQuery, setSearchParams]);
   const { notifyError } = useNotification();
 
   const [property, setProperty] = useState<Property | null>(null);
@@ -151,9 +184,7 @@ export default function PropertyDetails() {
   const [noteMessage, setNoteMessage] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
-  const [timelineFilter, setTimelineFilter] = useState<"all" | "note" | "updated">("all");
-  const [timelineQuery, setTimelineQuery] = useState("");
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+    const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
   const filteredEvents = events.filter((ev) => {
     // kind filter
