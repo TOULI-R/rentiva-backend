@@ -226,7 +226,7 @@ export default function PropertyDetails() {
       ? "bg-gray-500"
       : "bg-emerald-500";
 
-  const formatChangedFields = (meta: any): string | null => {
+  const formatChangedFields = (meta: any): string[] | null => {
     const fields = meta?.changedFields;
     if (!Array.isArray(fields) || fields.length === 0) return null;
 
@@ -256,7 +256,7 @@ export default function PropertyDetails() {
     };
 
     const nice = fields.map((f) => labels[String(f)] ?? String(f));
-    return "Αλλαγές: " + nice.join(", ");
+    return nice;
   };
 
   const onSubmitNote = async (e: FormEvent) => {
@@ -494,8 +494,20 @@ export default function PropertyDetails() {
                           </div>
 
                           {changed && (
-                            <div className="mt-1 text-xs text-gray-700">
-                              {changed}
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {changed.slice(0, 6).map((label, i) => (
+                                <span
+                                  key={label + "-" + i}
+                                  className="inline-flex items-center rounded-full bg-amber-50 text-amber-800 border border-amber-100 px-2 py-0.5 text-[11px] font-medium"
+                                >
+                                  {label}
+                                </span>
+                              ))}
+                              {changed.length > 6 && (
+                                <span className="text-[11px] text-gray-600">
+                                  +{changed.length - 6} ακόμη
+                                </span>
+                              )}
                             </div>
                           )}
 
