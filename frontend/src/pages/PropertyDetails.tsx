@@ -120,6 +120,7 @@ export default function PropertyDetails() {
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState<"all" | "note" | "updated">("all");
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
   const filteredEvents = events.filter((ev) => {
     if (timelineFilter === "all") return true;
@@ -127,6 +128,20 @@ export default function PropertyDetails() {
     if (timelineFilter === "updated") return ev.kind === "updated";
     return true;
   });
+
+  useEffect(() => {
+    const keys: string[] = [];
+    for (const ev of filteredEvents) {
+      const k = dayKey(ev.createdAt);
+      if (keys[keys.length - 1] !== k) keys.push(k);
+    }
+
+    setCollapsedGroups(() => {
+      const next: Record<string, boolean> = {};
+      keys.forEach((k, i) => (next[k] = i !== 0));
+      return next;
+    });
+  }, [timelineFilter, filteredEvents.length]);
 
   useEffect(() => {
     if (!id) {
@@ -561,12 +576,27 @@ export default function PropertyDetails() {
 
                     return groups.map((g) => (
                       <div key={g.key} className="space-y-2">
-                        <div className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">
-                          {g.label}
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setCollapsedGroups((prev) => ({
+                              ...prev,
+                              [g.key]: !prev[g.key],
+                            }))
+                          }
+                          className="w-full flex items-center justify-between rounded-lg bg-gray-50 border border-gray-200 px-2 py-1"
+                        >
+                          <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">
+                            {g.label}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {collapsedGroups[g.key] ? "▼" : "▲"}
+                          </span>
+                        </button>
 
-                        <div className="space-y-3">
-                          {g.items.map((ev, idx) => {
+                          {!collapsedGroups[g.key] && (
+                            <div className="space-y-3">
+                              {g.items.map((ev, idx) => {
                             const changed =
                               ev.kind === "updated" ? formatChangedFields(ev.meta) : null;
 
@@ -622,8 +652,9 @@ export default function PropertyDetails() {
                                 </div>
                               </div>
                             );
-                          })}
-                        </div>
+                              })}
+                            </div>
+                          )}
                       </div>
                     ));
                   })()}                </div>
