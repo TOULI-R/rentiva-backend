@@ -120,13 +120,19 @@ export default function PropertyDetails() {
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState<"all" | "note" | "updated">("all");
+  const [timelineQuery, setTimelineQuery] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
   const filteredEvents = events.filter((ev) => {
-    if (timelineFilter === "all") return true;
-    if (timelineFilter === "note") return ev.kind === "note";
-    if (timelineFilter === "updated") return ev.kind === "updated";
-    return true;
+    // kind filter
+    if (timelineFilter === "note" && ev.kind !== "note") return false;
+    if (timelineFilter === "updated" && ev.kind !== "updated") return false;
+
+    const q = timelineQuery.trim().toLowerCase();
+    if (!q) return true;
+
+    const hay = ((ev.title ?? "") + " " + (ev.message ?? "")).toLowerCase();
+    return hay.includes(q);
   });
 
   useEffect(() => {
@@ -545,6 +551,49 @@ export default function PropertyDetails() {
                 </button>
               </div>
             </div>
+
+            <div className="mt-2">
+
+              <div className="relative">
+
+                <input
+
+                  value={timelineQuery}
+
+                  onChange={(e) => setTimelineQuery(e.target.value)}
+
+                  placeholder="Αναζήτηση στο timeline…"
+
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
+
+                />
+
+                {timelineQuery.trim() && (
+
+                  <button
+
+                    type="button"
+
+                    onClick={() => setTimelineQuery("")}
+
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 text-sm"
+
+                    aria-label="Clear"
+
+                    title="Clear"
+
+                  >
+
+                    ×
+
+                  </button>
+
+                )}
+
+              </div>
+
+            </div>
+
 
             <div className="mt-3 space-y-3">
               {eventsLoading ? (
