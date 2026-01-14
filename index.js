@@ -48,7 +48,59 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json());
+// Smart JSON parser with encoding fallback (UTF-8 -> win1253 for Greek mojibake)
+app.use((req, res, next) => {
+  const ct = req.headers["content-type"] || "";
+  if (!String(ct).includes("application/json")) return next();
+
+  let buf = Buffer.alloc(0);
+  req.on("data", (chunk) => {
+    buf = Buffer.concat([buf, chunk]);
+  });
+  req.on("end", () => {
+    if (!buf.length) {
+      req.body = {};
+      return next();
+    }
+
+    const tryParse = (text) => {
+      try {
+        return { ok: true, value: JSON.parse(text) };
+      } catch (e) {
+        return { ok: false, error: e };
+      }
+    };
+
+    const asUtf8 = buf.toString("utf8");
+    let parsed = tryParse(asUtf8);
+
+    // Heuristic: if parsing failed OR looks like mojibake, try win1253
+    const looksMojibake =
+      asUtf8.includes("�") ||
+      /\?\?/.test(asUtf8) ||
+      /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(asUtf8);
+
+    if (!parsed.ok || looksMojibake) {
+      try {
+        const iconv = require("iconv-lite");
+        const asWin1253 = iconv.decode(buf, "win1253");
+        const parsed1253 = tryParse(asWin1253);
+        if (parsed1253.ok) parsed = parsed1253;
+      } catch {
+        // ignore fallback failure
+      }
+    }
+
+    if (!parsed.ok) {
+      return res.status(400).json({ error: "Invalid JSON" });
+    }
+
+    req.body = parsed.value;
+    next();
+  });
+  req.on("error", () => res.status(400).json({ error: "Invalid JSON" }));
+});
+
 
 // ── Σύνδεση Mongo ΚΑΙ ΜΕΤΑ mount routes + listen ─────────────────────────
 mongoose
