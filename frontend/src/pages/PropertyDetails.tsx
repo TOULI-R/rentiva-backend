@@ -88,6 +88,13 @@ export default function PropertyDetails() {
   const [noteSaved, setNoteSaved] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState<"all" | "note" | "updated">("all");
 
+  const filteredEvents = events.filter((ev) => {
+    if (timelineFilter === "all") return true;
+    if (timelineFilter === "note") return ev.kind === "note";
+    if (timelineFilter === "updated") return ev.kind === "updated";
+    return true;
+  });
+
   useEffect(() => {
     if (!id) {
       notifyError("Δεν βρέθηκε ID ακινήτου.");
@@ -146,12 +153,6 @@ export default function PropertyDetails() {
   }, [id]);
 
   if (loading) {
-  const filteredEvents = events.filter((ev) => {
-    if (timelineFilter === "all") return true;
-    if (timelineFilter === "note") return ev.kind === "note";
-    if (timelineFilter === "updated") return ev.kind === "updated";
-    return true;
-  });
 
   return (
       <div className="min-h-screen bg-gray-50">
