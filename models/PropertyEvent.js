@@ -18,7 +18,7 @@ const PropertyEventSchema = new mongoose.Schema(
       index: true,
     },
 
-    title: { type: String, required: true, trim: true, maxlength: 200 },
+    title: { type: String, required: true, trim: true, maxlength: 120 },
     message: { type: String, required: false, trim: true, maxlength: 2000 },
 
     // actorId: ποιος το προκάλεσε (user/landlord). Optional.

@@ -90,13 +90,33 @@ router.get('/:id/events', validateObjectIdParam('id'), async (req, res, next) =>
 router.post('/:id/events', validateObjectIdParam('id'), requireBody(['title']), async (req, res, next) => {
   try {
     const actorId = req.user?.id || req.user?._id;
+
+    // NOTE_LIMITS_V1: sanitize + enforce limits (defense in depth)
+    const titleRaw = req.body?.title;
+    const messageRaw = req.body?.message;
+
+    const title = String(titleRaw ?? "").trim();
+    const message = messageRaw == null ? undefined : String(messageRaw).trim();
+
+    if (!title) return res.status(400).json({ error: "title is required" });
+    if (title.length > 120) return res.status(400).json({ error: "title is too long (max 120)" });
+
+    if (message != null && message.length > 2000) {
+      return res.status(400).json({ error: "message is too long (max 2000)" });
+    }
+
+    // meta: only allow plain object-ish values (optional)
+    const meta = req.body?.meta;
+    const safeMeta =
+      meta && typeof meta === "object" && !Array.isArray(meta) ? meta : undefined;
+
     const ev = await PropertyEvent.create({
       propertyId: req.params.id,
       kind: 'note',
-      title: String(req.body.title).slice(0, 200),
-      message: typeof req.body.message === 'string' ? req.body.message.slice(0, 2000) : undefined,
-      actorId: actorId || undefined,
-      meta: req.body.meta && typeof req.body.meta === 'object' ? req.body.meta : {},
+      title,
+      message,
+      meta: safeMeta,
+      actorId,
     });
     res.status(201).json(ev);
   } catch (e) { next(e); }
