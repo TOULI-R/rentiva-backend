@@ -1,5 +1,195 @@
 const express = require('express');
 const router = express.Router();
+
+/* COMPATIBILITY_MATCH_V1_HELPERS */
+const _CM_ALLOWED_USAGE = new Set([
+  "family",
+  "remote_work",
+  "students",
+  "couple",
+  "single",
+  "roommates",
+  "short_term",
+]);
+
+function _cmToBool(v) {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (s === "true" || s === "1" || s === "yes" || s === "ναι") return true;
+    if (s === "false" || s === "0" || s === "no" || s === "όχι" || s === "οχι") return false;
+  }
+  return undefined;
+}
+
+function _cmInt(v, { min = 0, max = 999 } = {}) {
+  const n = typeof v === "number" ? v : parseInt(String(v ?? ""), 10);
+  if (!Number.isFinite(n)) return undefined;
+  const nn = Math.trunc(n);
+  if (nn < min || nn > max) return undefined;
+  return nn;
+}
+
+function _cmEnum(v, allowed) {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return undefined;
+  return allowed.has(s) ? s : undefined;
+}
+
+function _cmUsageList(v) {
+  const arr = Array.isArray(v) ? v : (typeof v === "string" ? v.split(",") : []);
+  const out = [];
+  for (const item of arr) {
+    const s = String(item ?? "").trim().toLowerCase();
+    if (!s) continue;
+    if (_CM_ALLOWED_USAGE.has(s) && !out.includes(s)) out.push(s);
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
+// Night-hour normalization: 01:00 => 25, so compares correctly vs 23
+function _cmNightHour(h) {
+  const n = _cmInt(h, { min: 0, max: 23 });
+  if (n == null) return undefined;
+  return n < 12 ? n + 24 : n;
+}
+
+function normalizeOwnerPrefs(input) {
+  const smoking = _cmEnum(input?.smoking, new Set(["no", "yes", "any"])) ?? "any";
+  const pets = _cmEnum(input?.pets, new Set(["no", "yes", "any"])) ?? "any";
+
+  const usage = _cmUsageList(input?.usage);
+  const quietHoursAfter = _cmInt(input?.quietHoursAfter, { min: 0, max: 23 });
+  const quietHoursStrict = _cmToBool(input?.quietHoursStrict) ?? false;
+  const maxOccupants = _cmInt(input?.maxOccupants, { min: 1, max: 20 });
+
+  return { smoking, pets, usage, quietHoursAfter, quietHoursStrict, maxOccupants };
+}
+
+function normalizeTenantAnswers(input) {
+  const smoking = _cmEnum(input?.smoking, new Set(["no", "yes"])) ?? undefined;
+  const pets = _cmEnum(input?.pets, new Set(["no", "yes"])) ?? undefined;
+
+  const usage = _cmUsageList(input?.usage);
+  const quietHoursAfter = _cmInt(input?.quietHoursAfter, { min: 0, max: 23 });
+  const occupants = _cmInt(input?.occupants, { min: 1, max: 20 });
+
+  return { smoking, pets, usage, quietHoursAfter, occupants };
+}
+
+function computeCompatibility(ownerPrefs, tenantAns) {
+  let score = 100;
+  const conflicts = [];
+  const breakdown = {};
+
+  function penalize(key, penalty, message, details = {}) {
+    if (penalty <= 0) return;
+    score -= penalty;
+    conflicts.push({ key, penalty, message, ...details });
+  }
+
+  // Smoking
+  {
+    const owner = ownerPrefs.smoking; // no/yes/any
+    const tenant = tenantAns.smoking; // yes/no/undefined
+    let penalty = 0;
+    let ok = true;
+    if (tenant != null) {
+      if (owner === "no" && tenant === "yes") { ok = false; penalty = 40; }
+    }
+    breakdown.smoking = { owner, tenant: tenant ?? null, ok, penalty };
+    if (!ok) penalize("smoking", penalty, "Ο ιδιοκτήτης δεν δέχεται καπνιστές.", { owner, tenant });
+  }
+
+  // Pets
+  {
+    const owner = ownerPrefs.pets; // no/yes/any
+    const tenant = tenantAns.pets; // yes/no/undefined
+    let penalty = 0;
+    let ok = true;
+    if (tenant != null) {
+      if (owner === "no" && tenant === "yes") { ok = false; penalty = 30; }
+    }
+    breakdown.pets = { owner, tenant: tenant ?? null, ok, penalty };
+    if (!ok) penalize("pets", penalty, "Ο ιδιοκτήτης δεν δέχεται κατοικίδια.", { owner, tenant });
+  }
+
+  // Usage overlap
+  {
+    const owner = ownerPrefs.usage ?? [];
+    const tenant = tenantAns.usage ?? [];
+    let penalty = 0;
+    let ok = true;
+
+    if (owner.length && tenant.length) {
+      const overlap = owner.some((x) => tenant.includes(x));
+      if (!overlap) { ok = false; penalty = 12; }
+    }
+
+    breakdown.usage = { owner, tenant, ok, penalty };
+    if (!ok) penalize("usage", penalty, "Δεν ταιριάζει ο τύπος χρήσης (π.χ. οικογένεια vs φοιτητές).", { owner, tenant });
+  }
+
+  // Quiet hours
+  {
+    const ownerRaw = ownerPrefs.quietHoursAfter;
+    const tenantRaw = tenantAns.quietHoursAfter;
+    let penalty = 0;
+    let ok = true;
+
+    if (ownerRaw != null && tenantRaw != null) {
+      const owner = _cmNightHour(ownerRaw);
+      const tenant = _cmNightHour(tenantRaw);
+      if (owner != null && tenant != null && tenant > owner) {
+        ok = false;
+        penalty = ownerPrefs.quietHoursStrict ? 22 : 12;
+      }
+    }
+
+    breakdown.quietHoursAfter = {
+      owner: ownerRaw ?? null,
+      tenant: tenantRaw ?? null,
+      strict: !!ownerPrefs.quietHoursStrict,
+      ok,
+      penalty,
+    };
+
+    if (!ok) {
+      penalize(
+        "quietHoursAfter",
+        penalty,
+        ownerPrefs.quietHoursStrict
+          ? "Ο ιδιοκτήτης έχει αυστηρές ώρες ησυχίας και δεν ταιριάζουν."
+          : "Οι ώρες ησυχίας δεν ταιριάζουν πολύ.",
+        { owner: ownerRaw, tenant: tenantRaw, strict: !!ownerPrefs.quietHoursStrict }
+      );
+    }
+  }
+
+  // Occupants
+  {
+    const owner = ownerPrefs.maxOccupants;
+    const tenant = tenantAns.occupants;
+    let penalty = 0;
+    let ok = true;
+
+    if (owner != null && tenant != null && tenant > owner) {
+      ok = false;
+      penalty = 25;
+    }
+
+    breakdown.occupants = { owner: owner ?? null, tenant: tenant ?? null, ok, penalty };
+    if (!ok) penalize("occupants", penalty, "Περισσότερα άτομα από το μέγιστο που δέχεται ο ιδιοκτήτης.", { owner, tenant });
+  }
+
+  if (score < 0) score = 0;
+  if (score > 100) score = 100;
+
+  return { score, conflicts, breakdown, prefsUsed: ownerPrefs };
+}
+/* END_COMPATIBILITY_MATCH_V1_HELPERS */
+
 const Property = require('../models/Property');
 const PropertyEvent = require('../models/PropertyEvent');
 const { validateObjectIdParam, requireBody } = require('../middleware/validate');
@@ -346,6 +536,228 @@ router.post('/create-simple', requireBody(['title']), async (req, res, next) => 
 
     res.status(201).json(doc);
 } catch (e) { next(e); }
+});
+
+
+/* COMPATIBILITY_MATCH_V1 */
+// Compatibility Match (Phase A) — backend-only scoring
+
+const ALLOWED_YNE = new Set(["yes", "no", "either"]);
+const ALLOWED_YN = new Set(["yes", "no"]);
+const ALLOWED_USAGE = new Set(["family", "remote_work", "students", "single", "couple", "shared", ]);
+
+function normStr(v) {
+  if (v == null) return "";
+  return String(v).trim();
+}
+
+function normYNE(v, field) {
+  const s = normStr(v).toLowerCase();
+  if (!s) return undefined;
+  if (!ALLOWED_YNE.has(s)) throw new Error(`invalid ${field}`);
+  return s;
+}
+
+function normYN(v, field) {
+  const s = normStr(v).toLowerCase();
+  if (!s) return undefined;
+  if (!ALLOWED_YN.has(s)) throw new Error(`invalid ${field}`);
+  return s;
+}
+
+function normHour(v, field) {
+  if (v == null || v === "") return undefined;
+  const n = Number(v);
+  if (!Number.isFinite(n)) throw new Error(`invalid ${field}`);
+  const i = Math.trunc(n);
+  if (i < 0 || i > 23) throw new Error(`invalid ${field}`);
+  return i;
+}
+
+function normInt(v, field, min, max) {
+  if (v == null || v === "") return undefined;
+  const n = Number(v);
+  if (!Number.isFinite(n)) throw new Error(`invalid ${field}`);
+  const i = Math.trunc(n);
+  if (i < min || i > max) throw new Error(`invalid ${field}`);
+  return i;
+}
+
+function normBool(v, field) {
+  if (v == null) return undefined;
+  if (typeof v === "boolean") return v;
+  const s = normStr(v).toLowerCase();
+  if (s === "true" || s === "1" || s === "yes") return true;
+  if (s === "false" || s === "0" || s === "no") return false;
+  throw new Error(`invalid ${field}`);
+}
+
+function normUsage(v) {
+  if (v == null) return undefined;
+  const arr = Array.isArray(v) ? v : [v];
+  const out = [];
+  for (const x of arr) {
+    const s = normStr(x).toLowerCase();
+    if (!s) continue;
+    if (!ALLOWED_USAGE.has(s)) throw new Error("invalid usage");
+    if (!out.includes(s)) out.push(s);
+  }
+  return out.length ? out.slice(0, 10) : undefined;
+}
+
+// map night hours so 01:00 counts as "later" than 23:00
+function nightScale(h) {
+  return h < 12 ? h + 24 : h;
+}
+
+function normalizeTenantPrefs(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("invalid payload");
+  const out = {};
+  if ("smoking" in body) out.smoking = normYNE(body.smoking, "smoking");
+  if ("pets" in body) out.pets = normYNE(body.pets, "pets");
+  if ("usage" in body) out.usage = normUsage(body.usage);
+  if ("quietHoursAfter" in body) out.quietHoursAfter = normHour(body.quietHoursAfter, "quietHoursAfter");
+  if ("quietHoursStrict" in body) out.quietHoursStrict = normBool(body.quietHoursStrict, "quietHoursStrict");
+  if ("maxOccupants" in body) out.maxOccupants = normInt(body.maxOccupants, "maxOccupants", 1, 20);
+  return out;
+}
+
+function normalizeTenantAnswers(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("invalid payload");
+  return {
+    smoking: normYN(body.smoking, "smoking"),
+    pets: normYN(body.pets, "pets"),
+    usage: normUsage(body.usage),
+    quietHoursAfter: normHour(body.quietHoursAfter, "quietHoursAfter"),
+    occupants: normInt(body.occupants, "occupants", 1, 20),
+  };
+}
+
+function computeCompatibility(owner, tenant) {
+  let score = 100;
+  const conflicts = [];
+  const breakdown = {};
+
+  function penalize(key, penalty, severity, message, ownerValue, tenantValue) {
+    if (penalty > 0) score = Math.max(0, score - penalty);
+    breakdown[key] = { penalty, severity, message, ownerValue, tenantValue };
+    if (penalty > 0) conflicts.push({ key, penalty, severity, message, ownerValue, tenantValue });
+  }
+
+  // Smoking
+  if (owner.smoking && owner.smoking !== "either" && tenant.smoking) {
+    if (owner.smoking === "no" && tenant.smoking === "yes") {
+      penalize("smoking", 35, "high", "Ο ιδιοκτήτης δεν δέχεται καπνιστές.", owner.smoking, tenant.smoking);
+    } else if (owner.smoking === "yes" && tenant.smoking === "no") {
+      penalize("smoking", 15, "medium", "Ο ιδιοκτήτης προτιμά καπνιστές.", owner.smoking, tenant.smoking);
+    } else {
+      penalize("smoking", 0, "ok", "ΟΚ στο κάπνισμα.", owner.smoking, tenant.smoking);
+    }
+  } else {
+    penalize("smoking", 0, "neutral", "Δεν ορίστηκε/δόθηκε πληροφορία για κάπνισμα.", owner.smoking, tenant.smoking);
+  }
+
+  // Pets
+  if (owner.pets && owner.pets !== "either" && tenant.pets) {
+    if (owner.pets === "no" && tenant.pets === "yes") {
+      penalize("pets", 25, "high", "Ο ιδιοκτήτης δεν δέχεται κατοικίδια.", owner.pets, tenant.pets);
+    } else if (owner.pets === "yes" && tenant.pets === "no") {
+      penalize("pets", 10, "low", "Ο ιδιοκτήτης προτιμά κατοικίδια.", owner.pets, tenant.pets);
+    } else {
+      penalize("pets", 0, "ok", "ΟΚ στα κατοικίδια.", owner.pets, tenant.pets);
+    }
+  } else {
+    penalize("pets", 0, "neutral", "Δεν ορίστηκε/δόθηκε πληροφορία για κατοικίδια.", owner.pets, tenant.pets);
+  }
+
+  // Usage overlap
+  if (Array.isArray(owner.usage) && owner.usage.length && Array.isArray(tenant.usage) && tenant.usage.length) {
+    const overlap = owner.usage.some((u) => tenant.usage.includes(u));
+    if (!overlap) {
+      penalize("usage", 20, "medium", "Διαφορετικός τύπος χρήσης/προφίλ.", owner.usage, tenant.usage);
+    } else {
+      penalize("usage", 0, "ok", "Υπάρχει κοινό προφίλ χρήσης.", owner.usage, tenant.usage);
+    }
+  } else {
+    penalize("usage", 0, "neutral", "Δεν ορίστηκε/δόθηκε πληροφορία για χρήση.", owner.usage, tenant.usage);
+  }
+
+  // Quiet hours
+  if (typeof owner.quietHoursAfter === "number" && typeof tenant.quietHoursAfter === "number") {
+    const o = nightScale(owner.quietHoursAfter);
+    const t = nightScale(tenant.quietHoursAfter);
+    if (t > o) {
+      const strict = owner.quietHoursStrict === true;
+      penalize("quietHours", strict ? 20 : 10, strict ? "high" : "medium",
+        strict ? "Ασυμβατότητα: αυστηρή ησυχία μετά την ώρα." : "Πιθανή σύγκρουση στις ώρες ησυχίας.",
+        owner.quietHoursAfter, tenant.quietHoursAfter
+      );
+    } else {
+      penalize("quietHours", 0, "ok", "ΟΚ στις ώρες ησυχίας.", owner.quietHoursAfter, tenant.quietHoursAfter);
+    }
+  } else {
+    penalize("quietHours", 0, "neutral", "Δεν ορίστηκε/δόθηκε πληροφορία για ώρες ησυχίας.", owner.quietHoursAfter, tenant.quietHoursAfter);
+  }
+
+  // Occupants
+  if (typeof owner.maxOccupants === "number" && typeof tenant.occupants === "number") {
+    if (tenant.occupants > owner.maxOccupants) {
+      penalize("occupants", 30, "high", "Υπέρβαση μέγιστου αριθμού ατόμων.", owner.maxOccupants, tenant.occupants);
+    } else {
+      penalize("occupants", 0, "ok", "ΟΚ στον αριθμό ατόμων.", owner.maxOccupants, tenant.occupants);
+    }
+  } else {
+    penalize("occupants", 0, "neutral", "Δεν ορίστηκε/δόθηκε πληροφορία για άτομα.", owner.maxOccupants, tenant.occupants);
+  }
+
+  return {
+    score,
+    conflicts,
+    breakdown,
+    prefsUsed: { owner, tenant },
+  };
+}
+
+
+
+router.patch('/:id/tenant-prefs', validateObjectIdParam('id'), async (req, res, next) => {
+  try {
+    const p = await Property.findById(req.params.id);
+    if (!p) return res.status(404).json({ error: 'Property not found' });
+
+    const prefs = normalizeOwnerPrefs(req.body);
+    p.tenantPrefs = prefs;
+
+    await p.save();
+
+    return res.json({ tenantPrefs: p.tenantPrefs });
+  } catch (e) { next(e); }
+});
+
+
+router.post('/:id/compatibility', validateObjectIdParam('id'), async (req, res, next) => {
+  try {
+    const p = await Property.findById(req.params.id).select('tenantPrefs');
+    if (!p) return res.status(404).json({ error: 'Property not found' });
+
+    const ownerPrefs = normalizeOwnerPrefs(p.tenantPrefs || {});
+    // αν δεν έχουν μπει prefs, μην κάνουμε "100%" από αέρα
+    const hasAnyPrefs =
+      ownerPrefs.smoking !== 'any' ||
+      ownerPrefs.pets !== 'any' ||
+      (ownerPrefs.usage && ownerPrefs.usage.length) ||
+      ownerPrefs.quietHoursAfter != null ||
+      ownerPrefs.maxOccupants != null;
+
+    if (!hasAnyPrefs) {
+      return res.status(400).json({ error: 'tenantPrefs not set for this property' });
+    }
+
+    const tenantAns = normalizeTenantAnswers(req.body || {});
+    const result = computeCompatibility(ownerPrefs, tenantAns);
+
+    return res.json(result);
+  } catch (e) { next(e); }
 });
 
 module.exports = router;

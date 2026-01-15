@@ -141,6 +141,31 @@ const PropertySchema = new mongoose.Schema(
       default: false,
     },
 
+    tenantPrefs: {
+      // Smoking preference
+      smoking: { type: String, enum: ["no", "yes", "either"], default: "either" },
+
+      // Pets policy (at the preference layer)
+      pets: { type: String, enum: ["no", "yes", "either"], default: "either" },
+
+      // Intended usage / household type
+      usage: {
+        type: [String],
+        enum: ["remote_work", "family", "students", "single", "couple", "shared"],
+        default: [],
+      },
+
+      // Quiet hours (e.g. after 23:00)
+      quietHoursAfter: { type: Number, min: 0, max: 23, default: null },
+      quietHoursStrict: { type: Boolean, default: false },
+
+      // Extra: max occupants preference (optional)
+      maxOccupants: { type: Number, min: 1, max: 20, default: null },
+
+      updatedAt: { type: Date, default: null },
+    },
+
+
     // αναλυτική περιγραφή
     description: {
       type: String,
