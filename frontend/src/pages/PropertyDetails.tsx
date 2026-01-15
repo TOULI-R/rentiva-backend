@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import Header from "../components/Header";
 import api, {
@@ -63,13 +63,13 @@ function groupLabelFromDayKey(key: string): string {
 }
 
 
-function highlightText(text: string, q: string): Array<string | JSX.Element> {
+function highlightText(text: string, q: string): ReactNode[] {
   const query = q.trim();
   if (query.length < 2) return [text];
   const lower = text.toLowerCase();
   const ql = query.toLowerCase();
 
-  const out: Array<string | JSX.Element> = [];
+  const out: ReactNode[] = [];
   let i = 0;
   let hit = 0;
 
@@ -178,25 +178,17 @@ export default function PropertyDetails() {
 
   const [events, setEvents] = useState<PropertyEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsLoadingMore, setEventsLoadingMore] = useState(false);
+  const [eventsNextBefore, setEventsNextBefore] = useState<string | null>(null);
   const [eventsError, setEventsError] = useState<string | null>(null);
-
   const [noteTitle, setNoteTitle] = useState("");
   const [noteMessage, setNoteMessage] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
     const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
-  const filteredEvents = events.filter((ev) => {
-    // kind filter
-    if (timelineFilter === "note" && ev.kind !== "note") return false;
-    if (timelineFilter === "updated" && ev.kind !== "updated") return false;
+  const filteredEvents = events;
 
-    const q = timelineQuery.trim().toLowerCase();
-    if (!q) return true;
-
-    const hay = ((ev.title ?? "") + " " + (ev.message ?? "")).toLowerCase();
-    return hay.includes(q);
-  });
 
   useEffect(() => {
     const keys: string[] = [];
@@ -250,15 +242,33 @@ export default function PropertyDetails() {
 
     let cancelled = false;
 
+    const serverKind =
+      timelineFilter === "note"
+        ? "note"
+        : timelineFilter === "updated"
+        ? "created,updated,deleted,restored"
+        : "";
+
+    const serverQ = timelineQuery.trim();
+
     setEventsLoading(true);
     setEventsError(null);
 
     (async () => {
       try {
-        const items = await api.listPropertyEvents(id, { limit: 30 });
-        if (!cancelled) setEvents(items);
-      } catch (e: any) {
-        if (!cancelled) setEventsError((e as any)?.message || "Αποτυχία φόρτωσης timeline.");
+        const res = await api.listPropertyEvents(id, {
+          limit: 30,
+          kind: serverKind || undefined,
+          q: serverQ || undefined,
+        });
+
+        if (!cancelled) {
+          setEvents(res.items);
+          setEventsNextBefore(res.nextBefore ?? null);
+        }
+      } catch (e) {
+        if (!cancelled)
+          setEventsError((e as any)?.message || "Αποτυχία φόρτωσης timeline.");
       } finally {
         if (!cancelled) setEventsLoading(false);
       }
@@ -267,9 +277,42 @@ export default function PropertyDetails() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, timelineFilter, timelineQuery]);
 
-  if (loading) {
+  const loadMoreEvents = async () => {
+    if (!id) return;
+    if (!eventsNextBefore) return;
+    if (eventsLoadingMore) return;
+
+    const serverKind =
+      timelineFilter === "note"
+        ? "note"
+        : timelineFilter === "updated"
+        ? "created,updated,deleted,restored"
+        : "";
+
+    const serverQ = timelineQuery.trim();
+
+    setEventsLoadingMore(true);
+    setEventsError(null);
+
+    try {
+      const res = await api.listPropertyEvents(id, {
+        limit: 30,
+        kind: serverKind || undefined,
+        q: serverQ || undefined,
+        before: eventsNextBefore,
+      });
+
+      setEvents((prev) => [...prev, ...res.items]);
+      setEventsNextBefore(res.nextBefore ?? null);
+    } catch (e) {
+      setEventsError((e as any)?.message || "Αποτυχία φόρτωσης παλαιότερων events.");
+    } finally {
+      setEventsLoadingMore(false);
+    }
+  };
+if (loading) {
 
   return (
       <div className="min-h-screen bg-gray-50">
@@ -400,8 +443,25 @@ export default function PropertyDetails() {
         message: message ? message : undefined,
       });
 
-      setEvents((prev) => [created, ...prev]);
-      setNoteTitle("");
+      setEvents((prev) => {
+      const q = timelineQuery.trim().toLowerCase();
+      const kindOk =
+        timelineFilter === "note"
+          ? created.kind === "note"
+          : timelineFilter === "updated"
+          ? created.kind !== "note"
+          : true;
+
+      if (!kindOk) return prev;
+
+      if (q) {
+        const hay = ((created.title ?? "") + " " + (created.message ?? "")).toLowerCase();
+        if (!hay.includes(q)) return prev;
+      }
+
+      return [created, ...prev];
+    });
+setNoteTitle("");
       setNoteMessage("");
       setNoteSaved(true);
       setTimeout(() => setNoteSaved(false), 1800);
@@ -809,7 +869,23 @@ export default function PropertyDetails() {
                 </form>
               </div>
             </div>
-          </div>
+          
+                  {/* Load more (cursor pagination) */}
+                  <div className="pt-2">
+                    {eventsNextBefore ? (
+                      <button
+                        type="button"
+                        onClick={loadMoreEvents}
+                        disabled={eventsLoadingMore}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
+                      >
+                        {eventsLoadingMore ? "Φορτώνω…" : "Φόρτωσε παλιότερα"}
+                      </button>
+                    ) : (
+                      <div className="text-center text-xs text-gray-500">Τέλος timeline.</div>
+                    )}
+                  </div>
+</div>
 
 {/* Ημερομηνίες */}
 

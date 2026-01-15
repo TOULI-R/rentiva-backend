@@ -254,15 +254,30 @@ const api = {
   restoreProperty,
   updateProperty,
 
-  listPropertyEvents: async (id: string, opts?: { limit?: number }) => {
-    const limit = opts?.limit ?? 20;
+  listPropertyEvents: async (
+    id: string,
+    opts?: { limit?: number; kind?: string; q?: string; before?: string }
+  ) => {
+    const rawLimit = opts?.limit ?? 20;
+    const limit = Math.max(1, Math.min(100, rawLimit)); // cap 100
+
     const qs = new URLSearchParams();
     qs.set("limit", String(limit));
-    const res = await request<{ items: PropertyEvent[] }>(
+
+    const kind = (opts?.kind ?? "").trim();
+    if (kind) qs.set("kind", kind);
+
+    const q = (opts?.q ?? "").trim();
+    if (q) qs.set("q", q);
+
+    const before = (opts?.before ?? "").trim();
+    if (before) qs.set("before", before);
+
+    return request<{ items: PropertyEvent[]; nextBefore: string | null }>(
       `/properties/${id}/events?${qs.toString()}`
     );
-    return res.items;
   },
+
 
   addPropertyEventNote: async (
     id: string,
