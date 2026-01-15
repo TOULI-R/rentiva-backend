@@ -130,6 +130,7 @@ export interface Property {
   landlordId?: string;
   createdAt?: string;
   updatedAt?: string;
+  balcony?: boolean;
 }
 
 export type PropertyEventKind = "created" | "updated" | "deleted" | "restored" | "note";
@@ -162,6 +163,7 @@ export type CreatePayload = {
   energyClass?: EnergyClass;
   parking?: ParkingType;
   elevator?: boolean;
+  balcony?: boolean;
 
   furnished?: FurnishedType;
   petsAllowed?: boolean;
