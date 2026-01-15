@@ -73,16 +73,54 @@ router.get('/', async (req, res, next) => {
 // Events timeline (Phase A)
 router.get('/:id/events', validateObjectIdParam('id'), async (req, res, next) => {
   try {
-    let { limit = 20 } = req.query;
-    limit = parseInt(limit, 10);
-    if (isNaN(limit) || limit < 1) limit = 20;
+    let { limit = 20, kind, q, before } = req.query;
+
+    limit = parseInt(String(limit), 10);
+    if (!Number.isFinite(limit) || limit <= 0) limit = 20;
     if (limit > 100) limit = 100;
 
-    const items = await PropertyEvent.find({ propertyId: req.params.id })
-      .sort({ createdAt: -1 })
-      .limit(limit);
+    const filter = { propertyId: req.params.id };
+    const allowedKinds = new Set(['created', 'updated', 'deleted', 'restored', 'note']);
 
-    res.json({ items });
+    // kind: "note" or "note,updated"
+    if (kind != null && String(kind).trim()) {
+      const rawKind = Array.isArray(kind) ? kind.join(',') : String(kind);
+      const kinds = rawKind.split(',').map((s) => s.trim()).filter(Boolean);
+
+      for (const k of kinds) {
+        if (!allowedKinds.has(k)) return res.status(400).json({ error: `invalid kind: ${k}` });
+      }
+
+      if (kinds.length === 1) filter.kind = kinds[0];
+      else if (kinds.length > 1) filter.kind = { $in: kinds };
+    }
+
+    // before: ISO date (cursor)
+    if (before != null && String(before).trim()) {
+      const d = new Date(String(before));
+      if (Number.isNaN(d.getTime())) {
+        return res.status(400).json({ error: 'invalid before date' });
+      }
+      filter.createdAt = { $lt: d };
+    }
+
+    // q: search in title/message (max 80 chars)
+    const queryText = q == null ? '' : String(q).trim();
+    if (queryText) {
+      const safe = queryText.slice(0, 80);
+      const esc = safe.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const rx = new RegExp(esc, 'i');
+      filter.$or = [{ title: rx }, { message: rx }];
+    }
+
+    const items = await PropertyEvent.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(limit + 1);
+
+    const hasMore = items.length > limit;
+    const pageItems = hasMore ? items.slice(0, limit) : items;
+    const nextBefore = hasMore ? pageItems[pageItems.length - 1].createdAt : null;
+    res.json({ items: pageItems, nextBefore });
   } catch (e) { next(e); }
 });
 
