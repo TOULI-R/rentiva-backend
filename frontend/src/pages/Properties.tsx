@@ -54,6 +54,7 @@ function Properties() {
     useState<ParkingType>("none");
   const [newElevator, setNewElevator] = useState(false);
 
+const [newBalcony, setNewBalcony] = useState(false);
   const [newFurnished, setNewFurnished] =
     useState<FurnishedType>("none");
   const [newPetsAllowed, setNewPetsAllowed] = useState(false);
@@ -86,6 +87,7 @@ function Properties() {
     useState<ParkingType>("none");
   const [editElevator, setEditElevator] = useState(false);
 
+const [editBalcony, setEditBalcony] = useState(false);
   const [editFurnished, setEditFurnished] =
     useState<FurnishedType>("none");
   const [editPetsAllowed, setEditPetsAllowed] = useState(false);
@@ -244,6 +246,7 @@ function Properties() {
     payload.energyClass = newEnergyClass;
     payload.parking = newParking;
     payload.elevator = newElevator;
+    payload.balcony = newBalcony;
     payload.furnished = newFurnished;
     payload.petsAllowed = newPetsAllowed;
     payload.billsIncluded = newBillsIncluded;
@@ -347,6 +350,13 @@ function Properties() {
     setEditEnergyClass(p.energyClass ?? "unknown");
     setEditParking(p.parking ?? "none");
     setEditElevator(!!p.elevator);
+    setEditBalcony(!!p.balcony);
+                    {p.balcony && (
+                      <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-700">
+                        Μπαλκόνι
+                      </span>
+                    )}
+
 
     setEditFurnished(p.furnished ?? "none");
     setEditPetsAllowed(!!p.petsAllowed);
@@ -520,6 +530,7 @@ function Properties() {
     payload.energyClass = editEnergyClass;
     payload.parking = editParking;
     payload.elevator = editElevator;
+    payload.balcony = editBalcony;
     payload.furnished = editFurnished;
     payload.petsAllowed = editPetsAllowed;
     payload.billsIncluded = editBillsIncluded;
@@ -760,7 +771,15 @@ function Properties() {
                 onChange={(e) => setNewElevator(e.target.checked)}
               />
               Με ασανσέρ
-            </label>
+            </label> <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={!!newBalcony}
+                  onChange={(e) => setNewBalcony(e.target.checked)}
+                />
+                <span>Μπαλκόνι</span>
+              </label>
+
           </div>
 
           {/* Επίπλωση / κατοικίδια */}
@@ -1153,6 +1172,16 @@ function Properties() {
                             />
                             Με ασανσέρ
                           </label>
+              __BALCONY_EDIT__
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={!!editBalcony}
+                  onChange={(e) => setEditBalcony(e.target.checked)}
+                />
+                <span>Μπαλκόνι</span>
+              </label>
+
                         </div>
 
                         {/* Επίπλωση / κατοικίδια */}

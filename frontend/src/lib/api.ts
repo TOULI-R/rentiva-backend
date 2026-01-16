@@ -97,6 +97,35 @@ export type ParkingType =
 
 export type FurnishedType = "none" | "partial" | "full";
 
+export type TenantPrefYNE = "yes" | "no" | "either";
+export type TenantAnsYN = "yes" | "no";
+
+export type TenantPrefsV1 = {
+  smoking?: TenantPrefYNE;
+  pets?: TenantPrefYNE;
+  usage?: string[];
+  quietHoursAfter?: number | null;
+  quietHoursStrict?: boolean;
+  maxOccupants?: number | null;
+  updatedAt?: string | null;
+};
+
+export type TenantAnswersV1 = {
+  smoking?: TenantAnsYN;
+  pets?: TenantAnsYN;
+  usage?: string[];
+  quietHoursAfter?: number;
+  occupants?: number;
+};
+
+export type CompatibilityResultV1 = {
+  score: number;
+  conflicts: any[];
+  breakdown: Record<string, any>;
+  prefsUsed?: any;
+};
+
+
 export interface Property {
   _id: string;
   title: string;
@@ -130,9 +159,10 @@ export interface Property {
   landlordId?: string;
   createdAt?: string;
   updatedAt?: string;
+  balcony?: boolean;
 }
 
-export type PropertyEventKind = "created" | "updated" | "deleted" | "restored" | "note";
+export type PropertyEventKind = "created" | "updated" | "deleted" | "restored" | "note" | "compatibility";
 
 export type PropertyEvent = {
   _id: string;
@@ -162,6 +192,7 @@ export type CreatePayload = {
   energyClass?: EnergyClass;
   parking?: ParkingType;
   elevator?: boolean;
+  balcony?: boolean;
 
   furnished?: FurnishedType;
   petsAllowed?: boolean;
@@ -243,7 +274,49 @@ async function updateProperty(id: string, payload: Partial<CreatePayload>) {
   });
 }
 
-const api = {
+  async function updateTenantPrefs(id: string, payload: TenantPrefsV1) {
+    return request<{ tenantPrefs: TenantPrefsV1 }>("/properties/" + id + "/tenant-prefs", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async function checkCompatibility(id: string, payload: TenantAnswersV1) {
+    return request<CompatibilityResultV1>("/properties/" + id + "/compatibility", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async function getShareKey(id: string, opts?: { rotate?: boolean }) {
+    const body = opts?.rotate ? { rotate: true } : {};
+    return request<{ shareKey: string }>("/properties/" + id + "/share-key", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function publicCompatibility(shareKey: string, payload: TenantAnswersV1) {
+    const sk = encodeURIComponent(String(shareKey || "").trim());
+    const res = await fetch(BASE + "/public/compatibility/" + sk, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      let msg = `HTTP `;
+      try {
+        const j = await res.json();
+        msg = (j && (j.error || j.message)) || msg;
+      } catch {}
+      throw new Error(msg);
+    }
+
+    return await res.json();
+  }
+
+  const api = {
   BASE,
   storage,
   login,
@@ -253,6 +326,10 @@ const api = {
   delProperty,
   restoreProperty,
   updateProperty,
+  updateTenantPrefs,
+  checkCompatibility,
+  getShareKey,
+  publicCompatibility,
 
   listPropertyEvents: async (
     id: string,

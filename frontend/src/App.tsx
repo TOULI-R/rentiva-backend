@@ -1,3 +1,4 @@
+import PublicCompatibility from "./pages/PublicCompatibility";
 import type { ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
@@ -29,6 +30,7 @@ export default function App() {
             path="/login"
             element={token ? <Navigate to="/properties" replace /> : <Login />}
           />
+        <Route path="/tairiazoume/:shareKey" element={<PublicCompatibility />} />
           <Route
             path="/properties"
             element={
