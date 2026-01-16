@@ -756,7 +756,14 @@ router.post('/:id/compatibility', validateObjectIdParam('id'), async (req, res, 
     const tenantAns = normalizeTenantAnswers(req.body || {});
     const result = computeCompatibility(ownerPrefs, tenantAns);
 
-    return res.json(result);
+    
+      // Auto-log compatibility check to timeline
+      const actorId = req.user?.id || req.user?._id;
+      const title = result.score === 0 ? "Compatibility: conflict" : ("Compatibility: score " + result.score);
+      const message = (result.conflicts && result.conflicts.length) ? ("Conflicts: " + result.conflicts.join(", ")) : "No conflicts.";
+      await logEvent({ propertyId: req.params.id, kind: "compatibility", title, message, actorId, meta: { score: result.score, conflicts: result.conflicts } });
+
+      return res.json(result);
   } catch (e) { next(e); }
 });
 

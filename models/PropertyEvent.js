@@ -13,7 +13,7 @@ const PropertyEventSchema = new mongoose.Schema(
     // Phase A kinds (μπορούμε να επεκτείνουμε μετά)
     kind: {
       type: String,
-      enum: ["created", "updated", "deleted", "restored", "note"],
+      enum: ["created", "updated", "deleted", "restored", "note", "compatibility"],
       required: true,
       index: true,
     },
