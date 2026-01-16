@@ -10,6 +10,16 @@ const PropertySchema = new mongoose.Schema(
       index: true,
     },
 
+      // public share link key (for anonymous compatibility checks)
+      shareKey: {
+        type: String,
+        required: false,
+        unique: true,
+        sparse: true,
+        index: true,
+      },
+
+
     // βασικά στοιχεία
     title: {
       type: String,

@@ -6,10 +6,9 @@ const _CM_ALLOWED_USAGE = new Set([
   "family",
   "remote_work",
   "students",
-  "couple",
   "single",
-  "roommates",
-  "short_term",
+  "couple",
+  "shared",
 ]);
 
 function _cmToBool(v) {
@@ -56,8 +55,8 @@ function _cmNightHour(h) {
 }
 
 function normalizeOwnerPrefs(input) {
-  const smoking = _cmEnum(input?.smoking, new Set(["no", "yes", "any"])) ?? "any";
-  const pets = _cmEnum(input?.pets, new Set(["no", "yes", "any"])) ?? "any";
+  const smoking = _cmEnum(input?.smoking, new Set(["no", "yes", "either"])) ?? "either";
+  const pets = _cmEnum(input?.pets, new Set(["no", "yes", "either"])) ?? "either";
 
   const usage = _cmUsageList(input?.usage);
   const quietHoursAfter = _cmInt(input?.quietHoursAfter, { min: 0, max: 23 });
@@ -193,6 +192,7 @@ function computeCompatibility(ownerPrefs, tenantAns) {
 const Property = require('../models/Property');
 const PropertyEvent = require('../models/PropertyEvent');
 const { validateObjectIdParam, requireBody } = require('../middleware/validate');
+const { normalizeOwnerPrefsV1, normalizeTenantAnswersV1, computeCompatibilityV1, hasAnyOwnerPrefsV1 } = require('../lib/compatibilityV1');
 
 async function logEvent({ propertyId, kind, title, message, actorId, meta }) {
   try {
@@ -720,12 +720,41 @@ function computeCompatibility(owner, tenant) {
 
 
 
+  // Generate / rotate shareKey (for anonymous compatibility checks)
+  router.post('/:id/share-key', validateObjectIdParam('id'), async (req, res, next) => {
+    try {
+      const crypto = require('crypto');
+      const p = await Property.findById(req.params.id).select('shareKey deletedAt');
+      if (!p) return res.status(404).json({ error: 'Property not found' });
+      if (p.deletedAt) return res.status(400).json({ error: 'Property is deleted' });
+
+      const rotate = req.body && req.body.rotate === true;
+      if (!rotate && p.shareKey) return res.json({ shareKey: p.shareKey });
+
+      for (let i = 0; i < 5; i++) {
+        const key = crypto.randomBytes(16).toString('hex');
+        try {
+          p.shareKey = key;
+          await p.save();
+          return res.json({ shareKey: key });
+        } catch (e) {
+          if (e && e.code === 11000) continue; // duplicate key retry
+          throw e;
+        }
+      }
+
+      return res.status(500).json({ error: 'Could not generate unique shareKey' });
+    } catch (e) { next(e); }
+  });
+
 router.patch('/:id/tenant-prefs', validateObjectIdParam('id'), async (req, res, next) => {
   try {
     const p = await Property.findById(req.params.id);
+
+
     if (!p) return res.status(404).json({ error: 'Property not found' });
 
-    const prefs = normalizeOwnerPrefs(req.body);
+    const prefs = normalizeOwnerPrefsV1(req.body);
     p.tenantPrefs = prefs;
 
     await p.save();
@@ -740,28 +769,24 @@ router.post('/:id/compatibility', validateObjectIdParam('id'), async (req, res, 
     const p = await Property.findById(req.params.id).select('tenantPrefs');
     if (!p) return res.status(404).json({ error: 'Property not found' });
 
-    const ownerPrefs = normalizeOwnerPrefs(p.tenantPrefs || {});
+    const ownerPrefs = normalizeOwnerPrefsV1(p.tenantPrefs || {});
     // αν δεν έχουν μπει prefs, μην κάνουμε "100%" από αέρα
-    const hasAnyPrefs =
-      ownerPrefs.smoking !== 'any' ||
-      ownerPrefs.pets !== 'any' ||
-      (ownerPrefs.usage && ownerPrefs.usage.length) ||
-      ownerPrefs.quietHoursAfter != null ||
-      ownerPrefs.maxOccupants != null;
+    const hasAnyPrefs = hasAnyOwnerPrefsV1(ownerPrefs);
 
     if (!hasAnyPrefs) {
       return res.status(400).json({ error: 'tenantPrefs not set for this property' });
     }
 
-    const tenantAns = normalizeTenantAnswers(req.body || {});
-    const result = computeCompatibility(ownerPrefs, tenantAns);
+    const tenantAns = normalizeTenantAnswersV1(req.body || {});
+    const result = computeCompatibilityV1(ownerPrefs, tenantAns);
 
     
       // Auto-log compatibility check to timeline
       const actorId = req.user?.id || req.user?._id;
       const title = result.score === 0 ? "Compatibility: conflict" : ("Compatibility: score " + result.score);
-      const message = (result.conflicts && result.conflicts.length) ? ("Conflicts: " + result.conflicts.join(", ")) : "No conflicts.";
-      await logEvent({ propertyId: req.params.id, kind: "compatibility", title, message, actorId, meta: { score: result.score, conflicts: result.conflicts } });
+      const conflictsText = (result.conflicts||[]).map(c => (c.key ? (c.key + ": ") : "") + (c.message || "")).join(" | ");
+        const message = conflictsText ? ("Conflicts: " + conflictsText).slice(0, 1900) : "No conflicts.";
+      await logEvent({ propertyId: req.params.id, kind: "compatibility", title, message, actorId, meta: { score: result.score, conflictKeys: (result.conflicts||[]).map(c => c.key) } });
 
       return res.json(result);
   } catch (e) { next(e); }
