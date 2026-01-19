@@ -2,14 +2,18 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import Header from "../components/Header";
 import api, {
-  type Property,
+type Property,
   type PropertyEvent,
   type PropertyEventKind,
   type HeatingType,
   type EnergyClass,
   type ParkingType,
   type FurnishedType,
-} from "../lib/api";
+  type TenantPrefsV1,
+  type TenantAnswersV1,
+  type CompatibilityResultV1,
+}
+from "../lib/api";
 import { useNotification } from "../lib/notifications";
 
 function formatNumber(n: number | undefined | null): string {
@@ -171,20 +175,256 @@ export default function PropertyDetails() {
       return next;
     }, { replace: true });
   }, [timelineFilter, timelineQuery, setSearchParams]);
-  const { notifyError } = useNotification();
+  const { notifyError, notifySuccess } = useNotification();
 
   const [property, setProperty] = useState<Property | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const [events, setEvents] = useState<PropertyEvent[]>([]);
+  
+  const [shareKey, setShareKey] = useState<string | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
+
+  const effectiveShareKey = shareKey || property?.shareKey || null;
+
+  const shareUrl = effectiveShareKey
+    ? `${window.location.origin}/tairiazoume/${effectiveShareKey}`
+    : "";
+
+  
+  const [prefsDraft, setPrefsDraft] = useState<TenantPrefsV1>({});
+  const [prefsSaving, setPrefsSaving] = useState(false);
+
+  // Compatibility quick test (internal)
+  const [compatOpen, setCompatOpen] = useState(false);
+  const [tenantDraft, setTenantDraft] = useState<TenantAnswersV1>({});
+  const [compatBusy, setCompatBusy] = useState(false);
+  const [compatResult, setCompatResult] = useState<CompatibilityResultV1 | null>(null);
+
+  // Modal scroll lock
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const prev = document.body.style.overflow;
+    if (compatOpen) document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [compatOpen]);
+
+
+  const onOpenCompatModal = () => {
+    setCompatResult(null);
+
+    // Prefill με "λογικές" τιμές από owner prefs (αν υπάρχουν)
+    const owner: any = (property as any)?.tenantPrefs || {};
+
+    const smoking =
+      owner.smoking === "yes" || owner.smoking === "no" ? (owner.smoking as any) : undefined;
+    const pets =
+      owner.pets === "yes" || owner.pets === "no" ? (owner.pets as any) : undefined;
+
+    const usage = Array.isArray(owner.usage) && owner.usage.length ? owner.usage : undefined;
+
+    const quietHoursAfter =
+      typeof owner.quietHoursAfter === "number" ? owner.quietHoursAfter : undefined;
+
+    // Default occupants: αν έχει maxOccupants, βάλε κάτι "λογικό" (<=2), αλλιώς άφησε κενό
+    const occupants =
+      typeof owner.maxOccupants === "number"
+        ? Math.max(1, Math.min(2, owner.maxOccupants))
+        : undefined;
+
+    setTenantDraft({
+      smoking,
+      pets,
+      usage,
+      quietHoursAfter,
+      occupants,
+    });
+
+    setCompatOpen(true);
+  };
+
+  const onRunCompatibilityTest = async () => {
+    if (!id) return;
+    if (!hasTenantPrefs) {
+      notifyError("Δεν έχουν οριστεί προτιμήσεις ιδιοκτήτη ακόμα.");
+      return;
+    }
+
+    try {
+      setCompatBusy(true);
+      const payload: TenantAnswersV1 = {
+        smoking: tenantDraft.smoking,
+        pets: tenantDraft.pets,
+        usage: Array.isArray(tenantDraft.usage) ? tenantDraft.usage : undefined,
+        quietHoursAfter:
+          tenantDraft.quietHoursAfter == null || tenantDraft.quietHoursAfter === ("" as any)
+            ? undefined
+            : Number(tenantDraft.quietHoursAfter),
+        occupants:
+          tenantDraft.occupants == null || tenantDraft.occupants === ("" as any)
+            ? undefined
+            : Number(tenantDraft.occupants),
+      };
+
+      const res = await api.checkCompatibility(id, payload);
+      setCompatResult(res);
+      notifySuccess("Έγινε έλεγχος compatibility.");
+    } catch (e: any) {
+      notifyError(e?.message || "Αποτυχία ελέγχου compatibility.");
+    } finally {
+      setCompatBusy(false);
+    }
+  };
+
+  const onResetCompatibilityTest = () => {
+    setTenantDraft({});
+    setCompatResult(null);
+  };
+
+
+  const hasTenantPrefs = (() => {
+    const tp: any = property?.tenantPrefs;
+    if (!tp) return false;
+    const keys = Object.keys(tp).filter((k) => k !== "updatedAt");
+    return keys.length > 0;
+  })();
+
+  useEffect(() => {
+    setShareKey(property?.shareKey ?? null);
+
+    const tp: any = property?.tenantPrefs || {};
+    setPrefsDraft({
+      smoking: tp.smoking,
+      pets: tp.pets,
+      usage: Array.isArray(tp.usage) ? tp.usage : undefined,
+      quietHoursAfter: tp.quietHoursAfter ?? null,
+      quietHoursStrict: !!tp.quietHoursStrict,
+      maxOccupants: tp.maxOccupants ?? null,
+    });
+}, [property?._id]);
+
+  const onSaveTenantPrefs = async () => {
+    if (!id) return;
+
+    try {
+      setPrefsSaving(true);
+
+      const usageArr = Array.isArray(prefsDraft.usage) ? prefsDraft.usage : [];
+      const payload: TenantPrefsV1 = {
+        ...prefsDraft,
+        usage: usageArr.length ? usageArr : undefined,
+quietHoursAfter:
+          prefsDraft.quietHoursAfter == null ? null : Number(prefsDraft.quietHoursAfter),
+        maxOccupants:
+          prefsDraft.maxOccupants == null ? null : Number(prefsDraft.maxOccupants),
+      };
+
+      const res = await api.updateTenantPrefs(id, payload);
+      setProperty((prev) => (prev ? { ...prev, tenantPrefs: res.tenantPrefs } : prev));
+      notifySuccess("Αποθηκεύτηκαν τα Προτιμήσεις Ιδιοκτήτη.");
+    } catch (e: any) {
+      notifyError(e?.message || "Αποτυχία αποθήκευσης prefs.");
+    } finally {
+      setPrefsSaving(false);
+    }
+  };
+const copyText = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  };
+
+  const ensureShareKey = async (opts?: { rotate?: boolean }) => {
+    if (!id) return null;
+    const res = await api.getShareKey(id, opts);
+    const next = res.shareKey;
+    setShareKey(next);
+    setProperty((prev) => (prev ? { ...prev, shareKey: next } : prev));
+    return next;
+  };
+
+  const onGenerateOrCopyShareLink = async () => {
+    try {
+      setShareBusy(true);
+
+      const sk = effectiveShareKey ?? (await ensureShareKey());
+      if (!sk) return;
+
+      const url = `${window.location.origin}/tairiazoume/${sk}`;
+      const ok = await copyText(url);
+
+      if (ok) notifySuccess("Αντιγράφηκε το share link.");
+      else {
+        notifyError("Το browser μπλόκαρε την αντιγραφή. Αντιγραφή χειροκίνητα από το πεδίο.");
+        try { window.prompt("Αντιγραφή link:", url); } catch {}
+      }
+    } catch (e: any) {
+      notifyError(e?.message || "Αποτυχία δημιουργίας share link.");
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
+  const onΆνοιγμαPublicCompatibility = async () => {
+    try {
+      setShareBusy(true);
+
+      const sk = effectiveShareKey ?? (await ensureShareKey());
+      if (!sk) return;
+
+      const url = `${window.location.origin}/tairiazoume/${sk}`;
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (e: any) {
+      notifyError(e?.message || "Αποτυχία ανοίγματος public σελίδας.");
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
+  const onRotateShareLink = async () => {
+    try {
+      setShareBusy(true);
+
+      const sk = await ensureShareKey({ rotate: true });
+      if (!sk) return;
+
+      const url = `${window.location.origin}/tairiazoume/${sk}`;
+      const ok = await copyText(url);
+
+      if (ok) notifySuccess("Έγινε rotate και αντιγράφηκε το νέο link.");
+      else notifySuccess("Έγινε rotate το link.");
+    } catch (e: any) {
+      notifyError(e?.message || "Αποτυχία rotate share link.");
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
+const [events, setEvents] = useState<PropertyEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [eventsLoadingMore, setEventsLoadingMore] = useState(false);
   const [eventsNextBefore, setEventsNextBefore] = useState<string | null>(null);
   const [eventsError, setEventsError] = useState<string | null>(null);
-  const [noteTitle, setNoteTitle] = useState("");
-  const [noteMessage, setNoteMessage] = useState("");
-  const [noteSaving, setNoteSaving] = useState(false);
-  const [noteSaved, setNoteSaved] = useState(false);
+  const [noteTitle, setΌχιteTitle] = useState("");
+  const [noteMessage, setΌχιteMessage] = useState("");
+  const [noteSaving, setΌχιteSaving] = useState(false);
+  const [noteSaved, setΌχιteSaved] = useState(false);
     const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
   const filteredEvents = events;
@@ -266,7 +506,7 @@ export default function PropertyDetails() {
           setEvents(res.items);
           setEventsNextBefore(res.nextBefore ?? null);
         }
-      } catch (e) {
+      } catch (e: any) {
         if (!cancelled)
           setEventsError((e as any)?.message || "Αποτυχία φόρτωσης timeline.");
       } finally {
@@ -306,7 +546,7 @@ export default function PropertyDetails() {
 
       setEvents((prev) => [...prev, ...res.items]);
       setEventsNextBefore(res.nextBefore ?? null);
-    } catch (e) {
+    } catch (e: any) {
       setEventsError((e as any)?.message || "Αποτυχία φόρτωσης παλαιότερων events.");
     } finally {
       setEventsLoadingMore(false);
@@ -428,7 +668,7 @@ if (loading) {
     return nice;
   };
 
-  const onSubmitNote = async (e: FormEvent) => {
+  const onSubmitΌχιte = async (e: FormEvent) => {
     e.preventDefault();
     if (!id) return;
 
@@ -436,7 +676,7 @@ if (loading) {
     const message = noteMessage.trim();
     if (!title) return;
 
-    setNoteSaving(true);
+    setΌχιteSaving(true);
     try {
       const created = await api.addPropertyEventNote(id, {
         title,
@@ -461,14 +701,14 @@ if (loading) {
 
       return [created, ...prev];
     });
-setNoteTitle("");
-      setNoteMessage("");
-      setNoteSaved(true);
-      setTimeout(() => setNoteSaved(false), 1800);
+setΌχιteTitle("");
+      setΌχιteMessage("");
+      setΌχιteSaved(true);
+      setTimeout(() => setΌχιteSaved(false), 1800);
     } catch (err: any) {
       notifyError((err as any)?.message || "Αποτυχία αποθήκευσης σημείωσης.");
     } finally {
-      setNoteSaving(false);
+      setΌχιteSaving(false);
     }
   };
 
@@ -627,6 +867,520 @@ setNoteTitle("");
             </div>
           )}
 
+          {/* Compatibility / Ταιριάζουμε; */}
+          <div className="pt-3 border-t">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-semibold text-gray-900 text-sm">
+                  Compatibility / Ταιριάζουμε;
+                </div>
+                <div className="text-xs text-gray-500">
+                  Δημόσιο link για απαντήσεις ενοικιαστή (χωρίς login) + προτιμήσεις ιδιοκτήτη.
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={onGenerateOrCopyShareLink}
+                  disabled={shareBusy}
+                  className={
+                    "text-xs px-3 py-2 rounded-lg font-semibold " +
+                    (shareBusy
+                      ? "bg-gray-200 text-gray-600 cursor-not-allowed"
+                      : "bg-gray-900 text-white hover:bg-gray-800")
+                  }
+                  title={effectiveShareKey ? "Αντιγραφή link" : "Δημιουργία & αντιγραφή link"}
+                >
+                  {effectiveShareKey ? "Αντιγραφή link" : "Δημιουργία link"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onΆνοιγμαPublicCompatibility}
+                  disabled={shareBusy}
+                  className={
+                    "text-xs px-3 py-2 rounded-lg border font-semibold " +
+                    (shareBusy
+                      ? "border-gray-200 text-gray-500 cursor-not-allowed"
+                      : "border-gray-300 text-gray-700 hover:bg-gray-50")
+                  }
+                  title="Άνοιγμα public σελίδας"
+                >
+                  Άνοιγμα
+                </button>
+
+                
+                <button
+                  type="button"
+                  onClick={onOpenCompatModal}
+                  disabled={shareBusy}
+                  className={
+                    "text-xs px-3 py-2 rounded-lg border font-semibold " +
+                    (shareBusy
+                      ? "border-gray-200 text-gray-500 cursor-not-allowed"
+                      : "border-gray-300 text-gray-700 hover:bg-gray-50")
+                  }
+                  title="Γρήγορη δοκιμή compatibility (internal)"
+                >
+                  Δοκιμή
+                </button>
+{effectiveShareKey && (
+                  <button
+                    type="button"
+                    onClick={onRotateShareLink}
+                    disabled={shareBusy}
+                    className={
+                      "text-xs px-3 py-2 rounded-lg border font-semibold " +
+                      (shareBusy
+                        ? "border-gray-200 text-gray-500 cursor-not-allowed"
+                        : "border-gray-300 text-gray-700 hover:bg-gray-50")
+                    }
+                    title="Αλλαγή link share key"
+                  >
+                    Αλλαγή link
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-2 space-y-2">
+              {effectiveShareKey ? (
+                <div className="rounded-lg bg-gray-50 border border-gray-200 p-2 text-xs text-gray-800 break-all">
+                  {shareUrl}
+                </div>
+              ) : (
+                <div className="text-xs text-gray-600">
+                  Δεν υπάρχει ακόμη share link για αυτό το ακίνητο.
+                </div>
+              )}
+            </div>
+
+            <div className="mt-3 rounded-xl border border-gray-200 bg-white p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">Προτιμήσεις Ιδιοκτήτη</div>
+                  <div className="text-xs text-gray-500">
+                    Αυτά καθορίζουν πώς “μετράει” το compatibility.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={onSaveTenantPrefs}
+                  disabled={prefsSaving}
+                  className={
+                    "text-xs px-3 py-2 rounded-lg font-semibold " +
+                    (prefsSaving
+                      ? "bg-gray-200 text-gray-600 cursor-not-allowed"
+                      : "bg-emerald-600 text-white hover:bg-emerald-700")
+                  }
+                >
+                  {prefsSaving ? "Αποθήκευση..." : "Αποθήκευση"}
+                </button>
+              </div>
+
+              {!hasTenantPrefs && (
+                <div className="mt-2 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-800">
+                  Δεν έχουν οριστεί prefs ακόμα. Συμπλήρωσε και πάτα “Αποθήκευση”.
+                </div>
+              )}
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <div className="text-[11px] font-semibold text-gray-700 mb-1">Κάπνισμα</div>
+                  <select
+                    value={(prefsDraft.smoking as any) ?? ""}
+                    onChange={(e) =>
+                      setPrefsDraft((p) => ({
+                        ...p,
+                        smoking: e.target.value ? (e.target.value as any) : undefined,
+                      }))
+                    }
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="">— (δεν ορίστηκε)</option>
+                    <option value="either">Αδιάφορο</option>
+                    <option value="no">Όχι</option>
+                    <option value="yes">Ναι</option>
+                  </select>
+                </label>
+
+                <label className="block">
+                  <div className="text-[11px] font-semibold text-gray-700 mb-1">Κατοικίδια</div>
+                  <select
+                    value={(prefsDraft.pets as any) ?? ""}
+                    onChange={(e) =>
+                      setPrefsDraft((p) => ({
+                        ...p,
+                        pets: e.target.value ? (e.target.value as any) : undefined,
+                      }))
+                    }
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="">— (δεν ορίστηκε)</option>
+                    <option value="either">Αδιάφορο</option>
+                    <option value="no">Όχι</option>
+                    <option value="yes">Ναι</option>
+                  </select>
+                </label>
+
+                
+                <div className="block sm:col-span-2">
+                  <div className="text-[11px] font-semibold text-gray-700 mb-2">
+                    Χρήση (επιλογές)
+                  </div>
+
+                  {(() => {
+                    const opts: Array<{ key: string; label: string }> = [
+                      { key: "family", label: "Οικογένεια" },
+                      { key: "remote_work", label: "Τηλεργασία" },
+                      { key: "students", label: "Φοιτητές" },
+                      { key: "single", label: "Μόνος/η" },
+                      { key: "couple", label: "Ζευγάρι" },
+                      { key: "shared", label: "Συγκατοίκηση" },
+                    ];
+
+                    const selected = new Set(Array.isArray(prefsDraft.usage) ? prefsDraft.usage : []);
+
+                    const toggle = (k: string) => {
+                      setPrefsDraft((p) => {
+                        const cur = new Set(Array.isArray(p.usage) ? p.usage : []);
+                        if (cur.has(k)) cur.delete(k);
+                        else cur.add(k);
+                        return { ...p, usage: Array.from(cur) };
+                      });
+                    };
+
+                    return (
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {opts.map((o) => (
+                          <label key={o.key} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={selected.has(o.key)}
+                              onChange={() => toggle(o.key)}
+                            />
+                            <span className="text-sm text-gray-800">{o.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+
+                <label className="block">
+                  <div className="text-[11px] font-semibold text-gray-700 mb-1">
+                    Ώρες ησυχίας μετά (0-23)
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    max="23"
+                    value={prefsDraft.quietHoursAfter ?? ""}
+                    onChange={(e) =>
+                      setPrefsDraft((p) => ({
+                        ...p,
+                        quietHoursAfter: e.target.value === "" ? null : Number(e.target.value),
+                      }))
+                    }
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                  />
+                </label>
+
+                <label className="block">
+                  <div className="text-[11px] font-semibold text-gray-700 mb-1">Μέγιστοι ένοικοι</div>
+                  <input
+                    type="number"
+                    min="1"
+                    value={prefsDraft.maxOccupants ?? ""}
+                    onChange={(e) =>
+                      setPrefsDraft((p) => ({
+                        ...p,
+                        maxOccupants: e.target.value === "" ? null : Number(e.target.value),
+                      }))
+                    }
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                  />
+                </label>
+
+                <label className="flex items-center gap-2 sm:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={!!prefsDraft.quietHoursStrict}
+                    onChange={(e) =>
+                      setPrefsDraft((p) => ({ ...p, quietHoursStrict: e.target.checked }))
+                    }
+                  />
+                  <span className="text-sm text-gray-800">Αυστηρή τήρηση ωρών ησυχίας</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+
+
+          
+          {/* Compatibility test modal */}
+          {compatOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4"
+              onClick={() => setCompatOpen(false)}
+            >
+              <div
+                className="w-full max-w-lg rounded-2xl bg-white shadow-xl border border-gray-200 p-4"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">
+                      Δοκιμή Compatibility
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Γρήγορος εσωτερικός έλεγχος με tenant answers (γράφει και timeline event).
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="rounded-lg px-2 py-1 text-gray-600 hover:bg-gray-100"
+                    onClick={() => setCompatOpen(false)}
+                    aria-label="Κλείσιμο"
+                    title="Κλείσιμο"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {!hasTenantPrefs && (
+                  <div className="mt-3 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-800">
+                    Δεν έχουν οριστεί προτιμήσεις ιδιοκτήτη. Πρώτα “Αποθήκευση” στις Προτιμήσεις Ιδιοκτήτη.
+                  </div>
+                )}
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className="block">
+                    <div className="text-[11px] font-semibold text-gray-700 mb-1">Κάπνισμα (tenant)</div>
+                    <select
+                      value={(tenantDraft.smoking as any) ?? ""}
+                      onChange={(e) =>
+                        setTenantDraft((p) => ({
+                          ...p,
+                          smoking: e.target.value ? (e.target.value as any) : undefined,
+                        }))
+                      }
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                    >
+                      <option value="">— (δεν απαντήθηκε)</option>
+                      <option value="no">Όχι</option>
+                      <option value="yes">Ναι</option>
+                    </select>
+                    <div className="mt-1">
+                      <button
+                        type="button"
+                        onClick={() => setTenantDraft((p) => ({ ...p, smoking: undefined }))}
+                        className="text-[11px] text-gray-600 hover:underline"
+                      >
+                        Χωρίς απάντηση
+                      </button>
+                    </div>
+                  </label>
+
+                  <label className="block">
+                    <div className="text-[11px] font-semibold text-gray-700 mb-1">Κατοικίδια (tenant)</div>
+                    <select
+                      value={(tenantDraft.pets as any) ?? ""}
+                      onChange={(e) =>
+                        setTenantDraft((p) => ({
+                          ...p,
+                          pets: e.target.value ? (e.target.value as any) : undefined,
+                        }))
+                      }
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                    >
+                      <option value="">— (δεν απαντήθηκε)</option>
+                      <option value="no">Όχι</option>
+                      <option value="yes">Ναι</option>
+                    </select>
+                    <div className="mt-1">
+                      <button
+                        type="button"
+                        onClick={() => setTenantDraft((p) => ({ ...p, pets: undefined }))}
+                        className="text-[11px] text-gray-600 hover:underline"
+                      >
+                        Χωρίς απάντηση
+                      </button>
+                    </div>
+                  </label>
+
+                  <label className="block">
+                    <div className="text-[11px] font-semibold text-gray-700 mb-1">Ώρα ησυχίας μετά (0-23)</div>
+                    <input
+                      type="number"
+                      min="0"
+                      max="23"
+                      value={(tenantDraft.quietHoursAfter as any) ?? ""}
+                      onChange={(e) =>
+                        setTenantDraft((p) => ({
+                          ...p,
+                          quietHoursAfter: e.target.value === "" ? undefined : Number(e.target.value),
+                        }))
+                      }
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                    />
+                    <div className="mt-1">
+                      <button
+                        type="button"
+                        onClick={() => setTenantDraft((p) => ({ ...p, quietHoursAfter: undefined }))}
+                        className="text-[11px] text-gray-600 hover:underline"
+                      >
+                        Χωρίς απάντηση
+                      </button>
+                    </div>
+                  </label>
+
+                  <label className="block">
+                    <div className="text-[11px] font-semibold text-gray-700 mb-1">Άτομα (occupants)</div>
+                    <input
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={(tenantDraft.occupants as any) ?? ""}
+                      onChange={(e) =>
+                        setTenantDraft((p) => ({
+                          ...p,
+                          occupants: e.target.value === "" ? undefined : Number(e.target.value),
+                        }))
+                      }
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                    />
+                    <div className="mt-1">
+                      <button
+                        type="button"
+                        onClick={() => setTenantDraft((p) => ({ ...p, occupants: undefined }))}
+                        className="text-[11px] text-gray-600 hover:underline"
+                      >
+                        Χωρίς απάντηση
+                      </button>
+                    </div>
+                  </label>
+
+                  <div className="sm:col-span-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-[11px] font-semibold text-gray-700">Χρήση (tenant)</div>
+                      <button
+                        type="button"
+                        onClick={() => setTenantDraft((p) => ({ ...p, usage: undefined }))}
+                        className="text-[11px] text-gray-600 hover:underline"
+                        title="Καθαρισμός επιλογών χρήσης"
+                      >
+                        Χωρίς απάντηση
+                      </button>
+                    </div>
+
+                    {(() => {
+                      const opts = [
+                        { key: "family", label: "Οικογένεια" },
+                        { key: "remote_work", label: "Τηλεργασία" },
+                        { key: "students", label: "Φοιτητές" },
+                        { key: "single", label: "Μόνος/η" },
+                        { key: "couple", label: "Ζευγάρι" },
+                        { key: "shared", label: "Συγκατοίκηση" },
+                      ];
+
+                      const selected = new Set(Array.isArray(tenantDraft.usage) ? tenantDraft.usage : []);
+
+                      const toggle = (k: string) => {
+                        setTenantDraft((p) => {
+                          const cur = new Set(Array.isArray(p.usage) ? p.usage : []);
+                          if (cur.has(k)) cur.delete(k);
+                          else cur.add(k);
+                          return { ...p, usage: Array.from(cur) };
+                        });
+                      };
+
+                      return (
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {opts.map((o) => (
+                            <label
+                              key={o.key}
+                              className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selected.has(o.key)}
+                                onChange={() => toggle(o.key)}
+                              />
+                              <span className="text-sm text-gray-800">{o.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {compatResult && (
+                  <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-semibold text-gray-900">Αποτέλεσμα</div>
+                      <div className="text-sm font-semibold text-gray-900">
+                        Score: <span className="tabular-nums">{compatResult.score}</span>/100
+                      </div>
+                    </div>
+
+                    {Array.isArray(compatResult.conflicts) && compatResult.conflicts.length > 0 ? (
+                      <ul className="mt-2 list-disc pl-5 text-xs text-gray-700 space-y-1">
+                        {compatResult.conflicts.slice(0, 10).map((c, i) => (
+                          <li key={i}>{(c && (c.message || c.key)) ? String(c.message || c.key) : "Conflict"}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="mt-2 text-xs text-emerald-700 font-medium">
+                        Δεν βρέθηκαν conflicts.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="mt-4 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={onResetCompatibilityTest}
+                    className="text-xs px-3 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 font-semibold"
+                  >
+                    Reset
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCompatOpen(false)}
+                      className="text-xs px-3 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 font-semibold"
+                    >
+                      Κλείσιμο
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={onRunCompatibilityTest}
+                      disabled={compatBusy}
+                      className={
+                        "text-xs px-3 py-2 rounded-lg font-semibold " +
+                        (compatBusy
+                          ? "bg-gray-200 text-gray-600 cursor-not-allowed"
+                          : "bg-gray-900 text-white hover:bg-gray-800")
+                      }
+                    >
+                      {compatBusy ? "Έλεγχος..." : "Τρέξε έλεγχο"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Timeline */}
           <div className="pt-3 border-t">
             <div className="flex items-center justify-between gap-3">
@@ -670,7 +1424,7 @@ setNoteTitle("");
                       : "text-gray-600")
                   }
                 >
-                  Notes
+                  Όχιtes
                 </button>
               </div>
             </div>
@@ -845,16 +1599,16 @@ setNoteTitle("");
                   )}
                 </div>
 
-                <form onSubmit={onSubmitNote} className="mt-2 space-y-2">
+                <form onSubmit={onSubmitΌχιte} className="mt-2 space-y-2">
                   <input
                     value={noteTitle}
-                    onChange={(e) => setNoteTitle(e.target.value)}
+                    onChange={(e) => setΌχιteTitle(e.target.value)}
                     placeholder="Τίτλος"
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
                   />
                   <textarea
                     value={noteMessage}
-                    onChange={(e) => setNoteMessage(e.target.value)}
+                    onChange={(e) => setΌχιteMessage(e.target.value)}
                     placeholder="Μήνυμα (προαιρετικό)"
                     rows={3}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"

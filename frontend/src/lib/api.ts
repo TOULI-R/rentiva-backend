@@ -132,6 +132,11 @@ export interface Property {
   address: string;
   rent: number;
 
+
+  // Compatibility (share link + owner prefs)
+  shareKey?: string;
+  tenantPrefs?: TenantPrefsV1;
+
   size?: number;
   floor?: number;
   bedrooms?: number;

@@ -751,8 +751,7 @@ router.patch('/:id/tenant-prefs', validateObjectIdParam('id'), async (req, res, 
   try {
     const p = await Property.findById(req.params.id);
 
-
-    if (!p) return res.status(404).json({ error: 'Property not found' });
+if (!p) return res.status(404).json({ error: 'Property not found' });
 
     const prefs = normalizeOwnerPrefsV1(req.body);
     p.tenantPrefs = prefs;
