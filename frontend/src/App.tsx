@@ -1,10 +1,14 @@
-import PublicCompatibility from "./pages/PublicCompatibility";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+
+import PublicCompatibility from "./pages/PublicCompatibility";
 import Login from "./pages/Login";
 import Properties from "./pages/Properties";
 import PropertyDetails from "./pages/PropertyDetails";
-import { storage } from "./lib/api";
+import ChooseRole from "./pages/ChooseRole";
+import TenantHome from "./pages/TenantHome";
+
+import api, { storage, type UserRole } from "./lib/api";
 import { NotificationProvider } from "./lib/notifications";
 
 type RequireAuthProps = {
@@ -13,9 +17,63 @@ type RequireAuthProps = {
 
 function RequireAuth({ children }: RequireAuthProps) {
   const token = storage.getToken();
-  if (!token) {
-    return <Navigate to="/login" replace />;
+  if (!token) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function RequireRole({
+  children,
+  allow,
+}: {
+  children: ReactNode;
+  allow: Exclude<UserRole, null>;
+}) {
+  const token = storage.getToken();
+  const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState<UserRole>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        if (!token) {
+          if (!cancelled) setRole(null);
+          return;
+        }
+        const me = await api.me();
+        if (!cancelled) setRole((me?.role ?? null) as UserRole);
+      } catch {
+        if (!cancelled) setRole(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  if (!token) return <Navigate to="/login" replace />;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="mx-auto max-w-4xl px-4 py-6">
+          <div className="animate-pulse bg-white rounded-xl shadow h-24" />
+        </div>
+      </div>
+    );
   }
+
+  if (!role) return <Navigate to="/choose-role" replace />;
+
+  // Αν έχει άλλο role από αυτό που επιτρέπεται, πάμε στο "σπίτι" του
+  if (role !== allow) {
+    return <Navigate to={role === "tenant" ? "/tenant" : "/properties"} replace />;
+  }
+
   return children;
 }
 
@@ -30,23 +88,49 @@ export default function App() {
             path="/login"
             element={token ? <Navigate to="/properties" replace /> : <Login />}
           />
-        <Route path="/tairiazoume/:shareKey" element={<PublicCompatibility />} />
+
+          {/* Public compatibility page */}
+          <Route path="/tairiazoume/:shareKey" element={<PublicCompatibility />} />
+
+          {/* Role chooser (requires auth, but no role) */}
+          <Route
+            path="/choose-role"
+            element={
+              <RequireAuth>
+                <ChooseRole />
+              </RequireAuth>
+            }
+          />
+
+          {/* Tenant area */}
+          <Route
+            path="/tenant"
+            element={
+              <RequireRole allow="tenant">
+                <TenantHome />
+              </RequireRole>
+            }
+          />
+
+          {/* Owner area */}
           <Route
             path="/properties"
             element={
-              <RequireAuth>
+              <RequireRole allow="owner">
                 <Properties />
-              </RequireAuth>
+              </RequireRole>
             }
           />
           <Route
             path="/properties/:id"
             element={
-              <RequireAuth>
+              <RequireRole allow="owner">
                 <PropertyDetails />
-              </RequireAuth>
+              </RequireRole>
             }
           />
+
+          {/* Default */}
           <Route path="*" element={<Navigate to="/properties" replace />} />
         </Routes>
       </BrowserRouter>

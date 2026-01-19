@@ -35,7 +35,7 @@ const API_BASE = (import.meta as any).env?.VITE_API_BASE || "http://localhost:50
 
 const USAGE_OPTIONS: Array<{ key: string; label: string }> = [
   { key: "family", label: "Οικογένεια" },
-  { key: "remote_work", label: "Remote work" },
+  { key: "remote_work", label: "Τηλεργασία" },
   { key: "students", label: "Φοιτητές" },
   { key: "single", label: "Μόνος/η" },
   { key: "couple", label: "Ζευγάρι" },

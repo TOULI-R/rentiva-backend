@@ -118,6 +118,28 @@ export type TenantAnswersV1 = {
   occupants?: number;
 };
 
+export type TenantProfile = {
+  _id: string;
+  userId: string;
+
+  phone?: string;
+  city?: string;
+  about?: string;
+
+  tenantAnswers?: TenantAnswersV1;
+
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type TenantProfilePatch = {
+  phone?: string;
+  city?: string;
+  about?: string;
+  tenantAnswers?: TenantAnswersV1;
+};
+
+
 export type CompatibilityResultV1 = {
   score: number;
   conflicts: any[];
@@ -219,6 +241,18 @@ export interface PaginatedPropertiesResponse {
   totalPages: number;
 }
 
+
+export type UserRole = "tenant" | "owner" | null;
+
+export type UserMe = {
+  _id: string;
+  name: string;
+  email: string;
+  role?: UserRole;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 // ---- Auth ----
 async function login(email: string, password: string) {
   const j = await request<{ token: string }>("/auth/login", {
@@ -227,6 +261,30 @@ async function login(email: string, password: string) {
   });
   if (j?.token) storage.setToken(j.token);
   return j;
+}
+
+async function me() {
+  return request<UserMe>("/auth/me", { method: "GET" });
+}
+
+async function setRole(role: Exclude<UserRole, null>) {
+  return request<{ role: Exclude<UserRole, null> }>("/auth/role", {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+  });
+}
+
+
+// ---- Tenant ----
+async function tenantMe(): Promise<TenantProfile> {
+  return request<TenantProfile>("/tenant/me");
+}
+
+async function updateTenantMe(payload: TenantProfilePatch): Promise<TenantProfile> {
+  return request<TenantProfile>("/tenant/me", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 // ---- Properties ----
@@ -322,6 +380,8 @@ async function updateProperty(id: string, payload: Partial<CreatePayload>) {
   }
 
   const api = {
+  tenantMe,
+  updateTenantMe,
   BASE,
   storage,
   login,
@@ -371,6 +431,8 @@ async function updateProperty(id: string, payload: Partial<CreatePayload>) {
       body: JSON.stringify(payload),
     });
   },
+  setRole,
+  me,
 };
 
 export default api;

@@ -112,6 +112,7 @@ mongoose
     app.use('/api/auth', authRouter);
 
 app.use('/api/public', require('./routes/public'));
+app.use('/api/tenant', require('./routes/tenant'));
     if (process.env.AUTH_OFF === 'true') {
       console.log('[AUTH] AUTH_OFF=true → /api/properties ΔΕΝ προστατεύεται (public)');
       app.use('/api/properties', propertiesRouter);

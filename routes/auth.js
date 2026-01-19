@@ -77,12 +77,39 @@ router.post('/register', async (req, res) => {
  */
 router.get('/me', auth, async (req, res) => {
   try {
-    const u = await User.findById(req.userId).select('_id name email createdAt updatedAt');
+    const u = await User.findById(req.userId).select('_id name email createdAt updatedAt role');
     if (!u) return res.status(404).json({ error: 'user not found' });
     res.json(u);
   } catch (err) {
     res.status(500).json({ error: 'me failed', details: err.message });
   }
 });
+
+
+/**
+ * PATCH /api/auth/role
+ * Header: Authorization: Bearer <token>
+ * body: { role: "tenant" | "owner" }
+ * returns: { role }
+ */
+router.patch('/role', auth, async (req, res) => {
+  try {
+    const role = String(req.body?.role || '').trim().toLowerCase();
+    if (role !== 'tenant' && role !== 'owner') {
+      return res.status(400).json({ error: 'invalid role' });
+    }
+
+    const u = await User.findById(req.userId);
+    if (!u) return res.status(404).json({ error: 'user not found' });
+
+    u.role = role;
+    await u.save();
+
+    res.json({ role: u.role });
+  } catch (err) {
+    res.status(500).json({ error: 'set role failed', details: err.message });
+  }
+});
+
 
 module.exports = router;
