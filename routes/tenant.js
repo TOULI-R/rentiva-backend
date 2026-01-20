@@ -85,6 +85,7 @@ router.patch("/me", auth, ensureTenant, async (req, res, next) => {
     if (about !== undefined) patch.about = about;
 
     const ta = body.tenantAnswers || {};
+    const hasUsage = Object.prototype.hasOwnProperty.call(ta, "usage");
     const tenantAnswers = {};
 
     const smoking = pickEnum(ta.smoking, new Set(["yes", "no"]));
@@ -95,7 +96,7 @@ router.patch("/me", auth, ensureTenant, async (req, res, next) => {
 
     if (smoking !== undefined) tenantAnswers.smoking = smoking;
     if (pets !== undefined) tenantAnswers.pets = pets;
-    if (Array.isArray(usage)) tenantAnswers.usage = usage;
+    if (hasUsage && Array.isArray(usage)) tenantAnswers.usage = usage;
     if (quietHoursAfter !== undefined) tenantAnswers.quietHoursAfter = quietHoursAfter;
     if (occupants !== undefined) tenantAnswers.occupants = occupants;
 
