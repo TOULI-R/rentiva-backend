@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
-import PublicCompatibility from "./pages/PublicCompatibility";
+import PublicCompatibility from "./pages/PublicCompatibilityPage";
 import Login from "./pages/Login";
 import Properties from "./pages/Properties";
 import PropertyDetails from "./pages/PropertyDetails";
