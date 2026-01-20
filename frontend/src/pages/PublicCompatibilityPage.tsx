@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import api, { storage, type TenantAnswersV1, type UserRole } from "../lib/api";
 
@@ -49,6 +49,15 @@ function clampInt(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, x));
 }
 
+function severityMeta(sev) {
+  const s = String(sev || "").toLowerCase();
+  if (s === "high") return { label: "Deal-breaker", className: "bg-rose-50 text-rose-800 border-rose-200" };
+  if (s === "medium") return { label: "Προσοχή", className: "bg-amber-50 text-amber-800 border-amber-200" };
+  if (s === "low") return { label: "Μικρό", className: "bg-sky-50 text-sky-800 border-sky-200" };
+  if (s === "ok") return { label: "OK", className: "bg-emerald-50 text-emerald-800 border-emerald-200" };
+  return { label: s || "—", className: "bg-slate-50 text-slate-700 border-slate-200" };
+}
+
 function toYN(v: any): "yes" | "no" | null {
   if (v === "yes" || v === true) return "yes";
   if (v === "no" || v === false) return "no";
@@ -58,6 +67,9 @@ function toYN(v: any): "yes" | "no" | null {
 export default function PublicCompatibility() {
   const { shareKey } = useParams();
 
+
+  const token = storage.getToken();
+  const [meRole, setMeRole] = useState<UserRole>(null);
   const [answers, setAnswers] = useState<TenantAnswers>({
     smoking: "no",
     pets: "no",
@@ -68,13 +80,32 @@ export default function PublicCompatibility() {
 
   const [loading, setLoading] = useState(false);
   const [passportLoading, setPassportLoading] = useState(false);
+  const [prefilledAt, setPrefilledAt] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<CompatibilityResult | null>(null);
 
   const shareKeySafe = useMemo(() => (shareKey || "").trim(), [shareKey]);
   const shareKeyLooksOk = /^[a-f0-9]{32}$/i.test(shareKeySafe);
 
-  const token = storage.getToken();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        if (!token) {
+          if (!cancelled) setMeRole(null);
+          return;
+        }
+        const me = await api.me();
+        if (!cancelled) setMeRole((me?.role ?? null) as UserRole);
+      } catch {
+        if (!cancelled) setMeRole(null);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [token]);
   const [roleHint, setRoleHint] = useState<UserRole>(null); // lazy (we'll fetch only when needed)
 
   const onToggleUsage = (key: string) => {
@@ -225,6 +256,12 @@ export default function PublicCompatibility() {
         <div className="mt-4 rounded-xl bg-white shadow p-4">
           <h2 className="font-medium">Συνήθειες ενοικιαστή</h2>
 
+          {token && (
+            <div className="mt-2 text-xs text-slate-600">
+              {meRole === "tenant" ? "Συνδεδεμένος ως Ενοικιαστής" : "Συνδεδεμένος"}
+              {prefilledAt ? " — Έτοιμο από Διαβατήριο ✓" : ""}
+            </div>
+          )}
           {/* 1-click passport */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
@@ -374,10 +411,22 @@ export default function PublicCompatibility() {
                   {(result.conflicts || []).length === 0 ? (
                     <div className="mt-1 text-sm text-emerald-700">Καμία σύγκρουση. (Σπάνιο. Μην το ματιάσεις.)</div>
                   ) : (
-                    <ul className="mt-2 list-disc pl-5 text-sm text-slate-800">
+                    <ul className="mt-2 space-y-1 text-sm text-slate-800">
                       {(result.conflicts || []).slice(0, 10).map((c, i) => (
-                        <li key={i}>
-                          <span className="font-medium">{c.key || "issue"}:</span> {c.message || "—"}
+                        <li key={i} className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="font-medium">{c.key || "issue"}:</span> {c.message || "—"}
+                          </div>
+                          <span
+                            className={
+                              "shrink-0 text-[11px] px-2 py-1 rounded-full border " +
+                              severityMeta(c.severity).className
+                            }
+                            title={String(c.severity || "")}
+                          >
+                            {severityMeta(c.severity).label}
+                            {typeof c.penalty === "number" ? ` (-${c.penalty})` : ""}
+                          </span>
                         </li>
                       ))}
                     </ul>
