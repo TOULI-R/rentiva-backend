@@ -27,6 +27,7 @@ const mongoose = require('mongoose');
 const authRouter = require('./routes/auth');
 const propertiesRouter = require('./routes/properties');
 const authMiddleware = require('./middleware/auth');
+const requireOwner = require("./middleware/requireOwner");
 const { notFound, errorHandler } = require('./middleware/errors');
 
 // ── App & middleware ──────────────────────────────────────────────────────
@@ -118,7 +119,7 @@ app.use('/api/tenant', require('./routes/tenant'));
       app.use('/api/properties', propertiesRouter);
     } else {
       console.log('[AUTH] Protecting /api/properties with JWT auth middleware');
-      app.use('/api/properties', authMiddleware, propertiesRouter);
+      app.use('/api/properties', authMiddleware, requireOwner, propertiesRouter);
     }
 
     // Healthcheck
