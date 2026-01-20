@@ -5,8 +5,8 @@ import PublicCompatibility from "./pages/PublicCompatibility";
 import Login from "./pages/Login";
 import Properties from "./pages/Properties";
 import PropertyDetails from "./pages/PropertyDetails";
-import ChooseRole from "./pages/ChooseRole";
-import TenantHome from "./pages/TenantHome";
+import ChooseRole from "./pages/ChooseRolePage";
+import TenantHome from "./pages/TenantHomePage";
 
 import api, { storage, type UserRole } from "./lib/api";
 import { NotificationProvider } from "./lib/notifications";
@@ -69,12 +69,56 @@ function RequireRole({
 
   if (!role) return <Navigate to="/choose-role" replace />;
 
-  // Αν έχει άλλο role από αυτό που επιτρέπεται, πάμε στο "σπίτι" του
   if (role !== allow) {
     return <Navigate to={role === "tenant" ? "/tenant" : "/properties"} replace />;
   }
 
   return children;
+}
+
+function PostLoginRedirect() {
+  const token = storage.getToken();
+  const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState<UserRole>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        if (!token) {
+          if (!cancelled) setRole(null);
+          return;
+        }
+        const me = await api.me();
+        if (!cancelled) setRole((me?.role ?? null) as UserRole);
+      } catch {
+        if (!cancelled) setRole(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  if (!token) return <Navigate to="/login" replace />;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="mx-auto max-w-4xl px-4 py-6">
+          <div className="animate-pulse bg-white rounded-xl shadow h-24" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!role) return <Navigate to="/choose-role" replace />;
+
+  return <Navigate to={role === "tenant" ? "/tenant" : "/properties"} replace />;
 }
 
 export default function App() {
@@ -84,15 +128,13 @@ export default function App() {
     <NotificationProvider>
       <BrowserRouter>
         <Routes>
-          <Route
-            path="/login"
-            element={token ? <Navigate to="/properties" replace /> : <Login />}
-          />
+          <Route path="/" element={<PostLoginRedirect />} />
+          <Route path="/login" element={token ? <PostLoginRedirect /> : <Login />} />
 
           {/* Public compatibility page */}
           <Route path="/tairiazoume/:shareKey" element={<PublicCompatibility />} />
 
-          {/* Role chooser (requires auth, but no role) */}
+          {/* Role chooser */}
           <Route
             path="/choose-role"
             element={
@@ -131,7 +173,7 @@ export default function App() {
           />
 
           {/* Default */}
-          <Route path="*" element={<Navigate to="/properties" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </NotificationProvider>

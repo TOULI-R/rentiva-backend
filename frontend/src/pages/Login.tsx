@@ -18,8 +18,8 @@ export default function Login() {
     try {
       await api.login(email, password);
       notifications.notifySuccess("Συνδεθήκατε επιτυχώς.");
-      navigate("/properties");
-    } catch (ex: any) {
+      navigate("/", { replace: true });
+} catch (ex: any) {
       const message = ex?.error || ex?.message || "Η σύνδεση απέτυχε.";
       setErr(message);
       notifications.notifyError(message);
