@@ -31,3 +31,4 @@ frontend/.env
 frontend/.vscode
 
 .tmp_*
+.tmp/
