@@ -33,7 +33,7 @@ echo "[3/3] PROPERTIES -> pick shareKey (owner-only)..."
 if [ "$ROLE" != "owner" ]; then
   echo "SKIP: /properties είναι owner-only. Θέλει owner credentials."
   echo "Tip: τρέξε με env vars:"
-  echo "  RENTIVA_EMAIL=<OWNER_EMAIL> RENTIVA_PASSWORD=<PASS> ./.tmp/smoke-public-compat.sh"
+  echo "  RENTIVA_EMAIL=<OWNER_EMAIL> RENTIVA_PASSWORD=<PASS> ./scripts/smoke-public-compat.sh"
   exit 0
 fi
 
