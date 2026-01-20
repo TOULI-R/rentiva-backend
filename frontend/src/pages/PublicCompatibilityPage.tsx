@@ -49,7 +49,7 @@ function clampInt(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, x));
 }
 
-function severityMeta(sev) {
+function severityMeta(sev: any) {
   const s = String(sev || "").toLowerCase();
   if (s === "high") return { label: "Deal-breaker", className: "bg-rose-50 text-rose-800 border-rose-200" };
   if (s === "medium") return { label: "Προσοχή", className: "bg-amber-50 text-amber-800 border-amber-200" };
@@ -213,6 +213,8 @@ export default function PublicCompatibility() {
 
       // show in UI
       setAnswers(next);
+
+      setPrefilledAt(Date.now());
 
       // run immediately
       await submit(next);
