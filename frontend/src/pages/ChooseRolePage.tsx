@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header";
 import api, { type UserRole } from "../lib/api";
 import { useNotification } from "../lib/notifications";
@@ -8,6 +8,8 @@ export default function ChooseRole() {
   const navigate = useNavigate();
   const { notifyError, notifySuccess } = useNotification();
 
+
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Exclude<UserRole, null> | null>(null);
   const [meRole, setMeRole] = useState<UserRole>(null);
@@ -44,7 +46,9 @@ export default function ChooseRole() {
     try {
       await api.setRole(role);
       notifySuccess(role === "tenant" ? "Ρόλος: Ενοικιαστής" : "Ρόλος: Ιδιοκτήτης");
-      navigate(role === "tenant" ? "/tenant" : "/properties", { replace: true });
+      const next = searchParams.get("next");
+            const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
+            navigate(safeNext || (role === "tenant" ? "/tenant" : "/properties"), { replace: true });
     } catch (e: any) {
       notifyError(e?.message || "Αποτυχία αποθήκευσης ρόλου.");
     } finally {

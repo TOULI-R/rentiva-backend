@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../lib/api";
 import { useNotification } from "../lib/notifications";
 
@@ -11,6 +11,8 @@ export default function Login() {
   const navigate = useNavigate();
   const notifications = useNotification();
 
+
+  const [searchParams] = useSearchParams();
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
@@ -18,7 +20,9 @@ export default function Login() {
     try {
       await api.login(email, password);
       notifications.notifySuccess("Συνδεθήκατε επιτυχώς.");
-      navigate("/", { replace: true });
+      const next = searchParams.get("next");
+            const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
+            navigate(safeNext || "/", { replace: true });
 } catch (ex: any) {
       const message = ex?.error || ex?.message || "Η σύνδεση απέτυχε.";
       setErr(message);

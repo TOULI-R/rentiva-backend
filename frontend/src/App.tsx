@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 
 import PublicCompatibility from "./pages/PublicCompatibilityPage";
 import Login from "./pages/Login";
@@ -15,9 +15,24 @@ type RequireAuthProps = {
   children: ReactNode;
 };
 
+
+function getSafeNext(search?: string) {
+  try {
+    const sp = new URLSearchParams(search || "");
+    const next = sp.get("next");
+    if (!next) return null;
+    if (!next.startsWith("/") || next.startsWith("//")) return null;
+    return next;
+  } catch {
+    return null;
+  }
+}
+
 function RequireAuth({ children }: RequireAuthProps) {
   const token = storage.getToken();
-  if (!token) return <Navigate to="/login" replace />;
+  const location = useLocation();
+  const next = encodeURIComponent(location.pathname + location.search);
+  if (!token) return <Navigate to={`/login?next=${next}`} replace />;
   return children;
 }
 
@@ -29,6 +44,7 @@ function RequireRole({
   allow: Exclude<UserRole, null>;
 }) {
   const token = storage.getToken();
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<UserRole>(null);
 
@@ -55,7 +71,10 @@ function RequireRole({
     };
   }, [token]);
 
-  if (!token) return <Navigate to="/login" replace />;
+  if (!token) {
+    const next = encodeURIComponent(location.pathname + location.search);
+    return <Navigate to={`/login?next=${next}`} replace />;
+  }
 
   if (loading) {
     return (
@@ -67,7 +86,10 @@ function RequireRole({
     );
   }
 
-  if (!role) return <Navigate to="/choose-role" replace />;
+  if (!role) {
+    const next = encodeURIComponent(location.pathname + location.search);
+    return <Navigate to={`/choose-role?next=${next}`} replace />;
+  }
 
   if (role !== allow) {
     return <Navigate to={role === "tenant" ? "/tenant" : "/properties"} replace />;
@@ -77,7 +99,10 @@ function RequireRole({
 }
 
 function PostLoginRedirect() {
+  const location = useLocation();
+  const safeNext = getSafeNext(location.search);
   const token = storage.getToken();
+
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<UserRole>(null);
 
@@ -104,7 +129,10 @@ function PostLoginRedirect() {
     };
   }, [token]);
 
-  if (!token) return <Navigate to="/login" replace />;
+  if (!token) {
+    const next = encodeURIComponent(location.pathname + location.search);
+    return <Navigate to={`/login?next=${next}`} replace />;
+  }
 
   if (loading) {
     return (
@@ -116,7 +144,14 @@ function PostLoginRedirect() {
     );
   }
 
-  if (!role) return <Navigate to="/choose-role" replace />;
+  if (!role) {
+    const next = encodeURIComponent(safeNext ?? "/");
+    return <Navigate to={`/choose-role?next=${next}`} replace />;
+  }
+
+  if (safeNext && !safeNext.startsWith("/login") && !safeNext.startsWith("/choose-role")) {
+    return <Navigate to={safeNext} replace />;
+  }
 
   return <Navigate to={role === "tenant" ? "/tenant" : "/properties"} replace />;
 }

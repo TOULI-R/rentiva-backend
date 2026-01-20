@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate, useLocation } from "react-router-dom";
 import api, { storage, type TenantAnswersV1, type UserRole } from "../lib/api";
 
 type TenantAnswers = {
@@ -66,10 +66,14 @@ function toYN(v: any): "yes" | "no" | null {
 
 export default function PublicCompatibility() {
   const { shareKey } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const nextUrl = encodeURIComponent(location.pathname + location.search);
 
 
   const token = storage.getToken();
   const [meRole, setMeRole] = useState<UserRole>(null);
+  const [meRoleLoading, setMeRoleLoading] = useState(false);
   const [answers, setAnswers] = useState<TenantAnswers>({
     smoking: "no",
     pets: "no",
@@ -94,14 +98,25 @@ export default function PublicCompatibility() {
     (async () => {
       try {
         if (!token) {
-          if (!cancelled) setMeRole(null);
-          return;
-        }
-        const me = await api.me();
-        if (!cancelled) setMeRole((me?.role ?? null) as UserRole);
+            if (!cancelled) {
+              setMeRole(null);
+              setMeRoleLoading(false);
+            }
+            return;
+          }
+
+          if (!cancelled) setMeRoleLoading(true);
+          const me = await api.me();
+          if (!cancelled) {
+            setMeRole((me?.role ?? null) as UserRole);
+            setMeRoleLoading(false);
+          }
       } catch {
-        if (!cancelled) setMeRole(null);
-      }
+          if (!cancelled) {
+            setMeRole(null);
+            setMeRoleLoading(false);
+          }
+        }
     })();
 
     return () => { cancelled = true; };
@@ -237,7 +252,7 @@ export default function PublicCompatibility() {
                 Πίσω στο Διαβατήριο
               </Link>
             ) : (
-              <Link className="text-sm text-slate-600 hover:underline" to="/login">
+              <Link className="text-sm text-slate-600 hover:underline" to={`/login?next=${nextUrl}`}>
                 Login
               </Link>
             )}
@@ -268,12 +283,17 @@ export default function PublicCompatibility() {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={runWithPassport}
-              disabled={passportLoading || loading}
+              onClick={() => {
+                if (!token) return navigate(`/login?next=${nextUrl}`);
+                if (meRoleLoading) return;
+                if (meRole !== "tenant") return navigate(`/choose-role?next=${nextUrl}`);
+                return runWithPassport();
+              }}
+              disabled={passportLoading || loading || meRoleLoading}
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
               title="Θα τραβήξει τις απαντήσεις από το Tenant Passport και θα τρέξει το test"
             >
-              {passportLoading ? "Φορτώνω διαβατήριο…" : "Με το Διαβατήριό μου"}
+              {passportLoading ? "Φορτώνω διαβατήριο…" : !token ? "Σύνδεση για Διαβατήριο" : meRoleLoading ? "Έλεγχος ρόλου…" : meRole !== "tenant" ? "Επίλεξε ρόλο Ενοικιαστή" : "Με το Διαβατήριό μου"}
             </button>
 
             {token && roleHint && (
