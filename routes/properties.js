@@ -447,6 +447,41 @@ router.patch('/:id', validateObjectIdParam('id'), async (req, res, next) => {
       updates.elevator = req.body.elevator;
     }
 
+    if (typeof req.body.balcony === 'boolean') {
+      updates.balcony = req.body.balcony;
+    }
+
+    // Βιβλιάριο Υγείας Ακινήτου (v1)
+    const hp = req.body.healthPassport;
+    let hpChanged = false;
+    if (hp && typeof hp === 'object' && !Array.isArray(hp)) {
+      if (typeof hp.windowsYear === 'number') {
+        updates['healthPassport.windowsYear'] = hp.windowsYear;
+        hpChanged = true;
+      }
+      if (typeof hp.acYear === 'number') {
+        updates['healthPassport.acYear'] = hp.acYear;
+        hpChanged = true;
+      }
+      if (typeof hp.roofInsulationYear === 'number') {
+        updates['healthPassport.roofInsulationYear'] = hp.roofInsulationYear;
+        hpChanged = true;
+      }
+      if (typeof hp.plumbingYear === 'number') {
+        updates['healthPassport.plumbingYear'] = hp.plumbingYear;
+        hpChanged = true;
+      }
+      if (typeof hp.electricalYear === 'number') {
+        updates['healthPassport.electricalYear'] = hp.electricalYear;
+        hpChanged = true;
+      }
+      if (typeof hp.notes === 'string') {
+        updates['healthPassport.notes'] = hp.notes;
+        hpChanged = true;
+      }
+      if (hpChanged) updates['healthPassport.updatedAt'] = new Date();
+    }
+
     // επιπλωμένο / κατοικίδια
     if (typeof req.body.furnished === 'string') {
       updates.furnished = req.body.furnished;
@@ -474,7 +509,7 @@ router.patch('/:id', validateObjectIdParam('id'), async (req, res, next) => {
 
     const changedFields = Object.keys(updates);
 
-      if (changedFields.length === 0) {
+    if (changedFields.length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' });
     }
 
@@ -497,6 +532,23 @@ router.patch('/:id', validateObjectIdParam('id'), async (req, res, next) => {
 router.post('/create-simple', requireBody(['title']), async (req, res, next) => {
   try {
     const landlordId = req.user?.id || req.user?._id; // από auth
+
+    // Βιβλιάριο Υγείας Ακινήτου (v1)
+    const hpBody = req.body.healthPassport;
+    const healthPassport = (() => {
+      if (!hpBody || typeof hpBody !== 'object' || Array.isArray(hpBody)) return undefined;
+      const out = {};
+      if (typeof hpBody.windowsYear === 'number') out.windowsYear = hpBody.windowsYear;
+      if (typeof hpBody.acYear === 'number') out.acYear = hpBody.acYear;
+      if (typeof hpBody.roofInsulationYear === 'number') out.roofInsulationYear = hpBody.roofInsulationYear;
+      if (typeof hpBody.plumbingYear === 'number') out.plumbingYear = hpBody.plumbingYear;
+      if (typeof hpBody.electricalYear === 'number') out.electricalYear = hpBody.electricalYear;
+      if (typeof hpBody.notes === 'string') out.notes = hpBody.notes;
+      if (!Object.keys(out).length) return undefined;
+      out.updatedAt = new Date();
+      return out;
+    })();
+
     const doc = await Property.create({
       title: req.body.title,
       address: req.body.address ?? undefined,
@@ -513,10 +565,14 @@ router.post('/create-simple', requireBody(['title']), async (req, res, next) => 
       energyClass: typeof req.body.energyClass === 'string' ? req.body.energyClass : undefined,
       parking: typeof req.body.parking === 'string' ? req.body.parking : undefined,
       elevator: typeof req.body.elevator === 'boolean' ? req.body.elevator : undefined,
+      balcony: typeof req.body.balcony === 'boolean' ? req.body.balcony : undefined,
 
       // επιπλωμένο / κατοικίδια
       furnished: typeof req.body.furnished === 'string' ? req.body.furnished : undefined,
       petsAllowed: typeof req.body.petsAllowed === 'boolean' ? req.body.petsAllowed : undefined,
+
+      // Βιβλιάριο Υγείας Ακινήτου (v1)
+      healthPassport: healthPassport || undefined,
 
       // περιγραφή
       description: typeof req.body.description === 'string' ? req.body.description : undefined,

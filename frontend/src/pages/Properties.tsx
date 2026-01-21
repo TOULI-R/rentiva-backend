@@ -46,6 +46,14 @@ function Properties() {
 
   const [newYearBuilt, setNewYearBuilt] = useState("");
   const [newYearRenovated, setNewYearRenovated] = useState("");
+
+  // Health Passport (v1)
+  const [newWindowsYear, setNewWindowsYear] = useState("");
+  const [newAcYear, setNewAcYear] = useState("");
+  const [newRoofInsulationYear, setNewRoofInsulationYear] = useState("");
+  const [newPlumbingYear, setNewPlumbingYear] = useState("");
+  const [newElectricalYear, setNewElectricalYear] = useState("");
+  const [newHpNotes, setNewHpNotes] = useState("");
   const [newHeatingType, setNewHeatingType] =
     useState<HeatingType>("none");
   const [newEnergyClass, setNewEnergyClass] =
@@ -54,7 +62,7 @@ function Properties() {
     useState<ParkingType>("none");
   const [newElevator, setNewElevator] = useState(false);
 
-const [newBalcony, setNewBalcony] = useState(false);
+  const [newBalcony, setNewBalcony] = useState(false);
   const [newFurnished, setNewFurnished] =
     useState<FurnishedType>("none");
   const [newPetsAllowed, setNewPetsAllowed] = useState(false);
@@ -79,6 +87,14 @@ const [newBalcony, setNewBalcony] = useState(false);
 
   const [editYearBuilt, setEditYearBuilt] = useState("");
   const [editYearRenovated, setEditYearRenovated] = useState("");
+
+  // Health Passport (v1) - edit
+  const [editWindowsYear, setEditWindowsYear] = useState("");
+  const [editAcYear, setEditAcYear] = useState("");
+  const [editRoofInsulationYear, setEditRoofInsulationYear] = useState("");
+  const [editPlumbingYear, setEditPlumbingYear] = useState("");
+  const [editElectricalYear, setEditElectricalYear] = useState("");
+  const [editHpNotes, setEditHpNotes] = useState("");
   const [editHeatingType, setEditHeatingType] =
     useState<HeatingType>("none");
   const [editEnergyClass, setEditEnergyClass] =
@@ -87,7 +103,7 @@ const [newBalcony, setNewBalcony] = useState(false);
     useState<ParkingType>("none");
   const [editElevator, setEditElevator] = useState(false);
 
-const [editBalcony, setEditBalcony] = useState(false);
+  const [editBalcony, setEditBalcony] = useState(false);
   const [editFurnished, setEditFurnished] =
     useState<FurnishedType>("none");
   const [editPetsAllowed, setEditPetsAllowed] = useState(false);
@@ -215,6 +231,36 @@ const [editBalcony, setEditBalcony] = useState(false);
       return;
     }
 
+    const windowsYearNumber = parseOptionalNumber(newWindowsYear);
+    if (Number.isNaN(windowsYearNumber)) {
+      notifyError("Το έτος κουφωμάτων πρέπει να είναι αριθμός.");
+      return;
+    }
+
+    const acYearNumber = parseOptionalNumber(newAcYear);
+    if (Number.isNaN(acYearNumber)) {
+      notifyError("Το έτος A/C πρέπει να είναι αριθμός.");
+      return;
+    }
+
+    const roofInsulationYearNumber = parseOptionalNumber(newRoofInsulationYear);
+    if (Number.isNaN(roofInsulationYearNumber)) {
+      notifyError("Το έτος μόνωσης ταράτσας πρέπει να είναι αριθμός.");
+      return;
+    }
+
+    const plumbingYearNumber = parseOptionalNumber(newPlumbingYear);
+    if (Number.isNaN(plumbingYearNumber)) {
+      notifyError("Το έτος υδραυλικών πρέπει να είναι αριθμός.");
+      return;
+    }
+
+    const electricalYearNumber = parseOptionalNumber(newElectricalYear);
+    if (Number.isNaN(electricalYearNumber)) {
+      notifyError("Το έτος ηλεκτρολογικών πρέπει να είναι αριθμός.");
+      return;
+    }
+
     const payload: CreatePayload = {
       title: newTitle.trim(),
       address: newAddress.trim(),
@@ -251,6 +297,16 @@ const [editBalcony, setEditBalcony] = useState(false);
     payload.petsAllowed = newPetsAllowed;
     payload.billsIncluded = newBillsIncluded;
 
+    // Health Passport payload (v1)
+    const hp: any = {};
+    if (windowsYearNumber !== undefined) hp.windowsYear = windowsYearNumber as number;
+    if (acYearNumber !== undefined) hp.acYear = acYearNumber as number;
+    if (roofInsulationYearNumber !== undefined) hp.roofInsulationYear = roofInsulationYearNumber as number;
+    if (plumbingYearNumber !== undefined) hp.plumbingYear = plumbingYearNumber as number;
+    if (electricalYearNumber !== undefined) hp.electricalYear = electricalYearNumber as number;
+    if (newHpNotes.trim()) hp.notes = newHpNotes.trim();
+    if (Object.keys(hp).length) payload.healthPassport = hp;
+
     try {
       await api.createProperty(payload);
       // καθαρισμός
@@ -263,10 +319,18 @@ const [editBalcony, setEditBalcony] = useState(false);
       setNewBathrooms("");
       setNewYearBuilt("");
       setNewYearRenovated("");
+
+      setNewWindowsYear("");
+      setNewAcYear("");
+      setNewRoofInsulationYear("");
+      setNewPlumbingYear("");
+      setNewElectricalYear("");
+      setNewHpNotes("");
       setNewHeatingType("none");
       setNewEnergyClass("unknown");
       setNewParking("none");
       setNewElevator(false);
+      setNewBalcony(false);
       setNewFurnished("none");
       setNewPetsAllowed(false);
       setNewDescription("");
@@ -346,16 +410,19 @@ const [editBalcony, setEditBalcony] = useState(false);
         ? String(p.yearRenovated)
         : ""
     );
+
+    // Health Passport (v1)
+    setEditWindowsYear(p.healthPassport?.windowsYear != null && !Number.isNaN(p.healthPassport.windowsYear) ? String(p.healthPassport.windowsYear) : "");
+    setEditAcYear(p.healthPassport?.acYear != null && !Number.isNaN(p.healthPassport.acYear) ? String(p.healthPassport.acYear) : "");
+    setEditRoofInsulationYear(p.healthPassport?.roofInsulationYear != null && !Number.isNaN(p.healthPassport.roofInsulationYear) ? String(p.healthPassport.roofInsulationYear) : "");
+    setEditPlumbingYear(p.healthPassport?.plumbingYear != null && !Number.isNaN(p.healthPassport.plumbingYear) ? String(p.healthPassport.plumbingYear) : "");
+    setEditElectricalYear(p.healthPassport?.electricalYear != null && !Number.isNaN(p.healthPassport.electricalYear) ? String(p.healthPassport.electricalYear) : "");
+    setEditHpNotes(p.healthPassport?.notes || "");
     setEditHeatingType(p.heatingType ?? "none");
     setEditEnergyClass(p.energyClass ?? "unknown");
     setEditParking(p.parking ?? "none");
     setEditElevator(!!p.elevator);
     setEditBalcony(!!p.balcony);
-                    {p.balcony && (
-                      <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-700">
-                        Μπαλκόνι
-                      </span>
-                    )}
 
 
     setEditFurnished(p.furnished ?? "none");
@@ -397,10 +464,19 @@ const [editBalcony, setEditBalcony] = useState(false);
     setEditBathrooms("");
     setEditYearBuilt("");
     setEditYearRenovated("");
+
+    // Health Passport (v1)
+    setEditWindowsYear("");
+    setEditAcYear("");
+    setEditRoofInsulationYear("");
+    setEditPlumbingYear("");
+    setEditElectricalYear("");
+    setEditHpNotes("");
     setEditHeatingType("none");
     setEditEnergyClass("unknown");
     setEditParking("none");
     setEditElevator(false);
+    setEditBalcony(false);
     setEditFurnished("none");
     setEditPetsAllowed(false);
     setEditDescription("");
@@ -499,6 +575,36 @@ const [editBalcony, setEditBalcony] = useState(false);
       return;
     }
 
+    const windowsYearNumber = parseOptionalNumber(editWindowsYear);
+    if (Number.isNaN(windowsYearNumber)) {
+      notifyError("Το έτος κουφωμάτων πρέπει να είναι αριθμός.");
+      return;
+    }
+
+    const acYearNumber = parseOptionalNumber(editAcYear);
+    if (Number.isNaN(acYearNumber)) {
+      notifyError("Το έτος A/C πρέπει να είναι αριθμός.");
+      return;
+    }
+
+    const roofInsulationYearNumber = parseOptionalNumber(editRoofInsulationYear);
+    if (Number.isNaN(roofInsulationYearNumber)) {
+      notifyError("Το έτος μόνωσης ταράτσας πρέπει να είναι αριθμός.");
+      return;
+    }
+
+    const plumbingYearNumber = parseOptionalNumber(editPlumbingYear);
+    if (Number.isNaN(plumbingYearNumber)) {
+      notifyError("Το έτος υδραυλικών πρέπει να είναι αριθμός.");
+      return;
+    }
+
+    const electricalYearNumber = parseOptionalNumber(editElectricalYear);
+    if (Number.isNaN(electricalYearNumber)) {
+      notifyError("Το έτος ηλεκτρολογικών πρέπει να είναι αριθμός.");
+      return;
+    }
+
     const payload: Partial<CreatePayload> = {
       title: editTitle.trim(),
       address: editAddress.trim(),
@@ -513,6 +619,16 @@ const [editBalcony, setEditBalcony] = useState(false);
       payload.bathrooms = bathroomsNumber as number;
     if (yearBuiltNumber !== undefined)
       payload.yearBuilt = yearBuiltNumber as number;
+
+    // Health Passport payload (v1)
+    const hp: any = {};
+    if (windowsYearNumber !== undefined) hp.windowsYear = windowsYearNumber as number;
+    if (acYearNumber !== undefined) hp.acYear = acYearNumber as number;
+    if (roofInsulationYearNumber !== undefined) hp.roofInsulationYear = roofInsulationYearNumber as number;
+    if (plumbingYearNumber !== undefined) hp.plumbingYear = plumbingYearNumber as number;
+    if (electricalYearNumber !== undefined) hp.electricalYear = electricalYearNumber as number;
+    if (editHpNotes.trim()) hp.notes = editHpNotes.trim();
+    if (Object.keys(hp).length) (payload as any).healthPassport = hp;
     if (yearRenovatedNumber !== undefined)
       payload.yearRenovated = yearRenovatedNumber as number;
     if (commonChargesNumber !== undefined)
@@ -780,6 +896,69 @@ const [editBalcony, setEditBalcony] = useState(false);
                 <span>Μπαλκόνι</span>
               </label>
 
+          </div>
+
+
+          {/* Βιβλιάριο Υγείας Ακινήτου (v1) */}
+          <div className="mt-4 border rounded-2xl p-3">
+            <div className="text-sm font-semibold text-gray-800 mb-2">Βιβλιάριο Υγείας Ακινήτου</div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <label className="block text-sm text-gray-700">
+                Κουφώματα (έτος)
+                <input
+                  className="mt-1 w-full border rounded-xl px-3 py-2"
+                  value={newWindowsYear}
+                  onChange={(e) => setNewWindowsYear(e.target.value)}
+                  placeholder="2018"
+                />
+              </label>
+              <label className="block text-sm text-gray-700">
+                A/C (έτος)
+                <input
+                  className="mt-1 w-full border rounded-xl px-3 py-2"
+                  value={newAcYear}
+                  onChange={(e) => setNewAcYear(e.target.value)}
+                  placeholder="2020"
+                />
+              </label>
+              <label className="block text-sm text-gray-700">
+                Μόνωση ταράτσας (έτος)
+                <input
+                  className="mt-1 w-full border rounded-xl px-3 py-2"
+                  value={newRoofInsulationYear}
+                  onChange={(e) => setNewRoofInsulationYear(e.target.value)}
+                  placeholder="2015"
+                />
+              </label>
+              <label className="block text-sm text-gray-700">
+                Υδραυλικά (έτος)
+                <input
+                  className="mt-1 w-full border rounded-xl px-3 py-2"
+                  value={newPlumbingYear}
+                  onChange={(e) => setNewPlumbingYear(e.target.value)}
+                  placeholder="2017"
+                />
+              </label>
+              <label className="block text-sm text-gray-700">
+                Ηλεκτρολογικά (έτος)
+                <input
+                  className="mt-1 w-full border rounded-xl px-3 py-2"
+                  value={newElectricalYear}
+                  onChange={(e) => setNewElectricalYear(e.target.value)}
+                  placeholder="2016"
+                />
+              </label>
+            </div>
+            <label className="block text-sm text-gray-700 mt-3">
+              Σημειώσεις
+              <textarea
+                className="mt-1 w-full border rounded-xl px-3 py-2"
+                value={newHpNotes}
+                onChange={(e) => setNewHpNotes(e.target.value)}
+                placeholder="π.χ. αλλαγή θερμοσίφωνα, επισκευές, επαναλαμβανόμενα θέματα..."
+                rows={2}
+              />
+            </label>
           </div>
 
           {/* Επίπλωση / κατοικίδια */}
@@ -1220,6 +1399,69 @@ const [editBalcony, setEditBalcony] = useState(false);
                               Επιτρέπονται κατοικίδια
                             </label>
                           </div>
+                        </div>
+
+
+                        {/* Βιβλιάριο Υγείας Ακινήτου (v1) */}
+                        <div className="mt-3 border rounded-2xl p-2">
+                          <div className="text-xs font-semibold text-gray-800 mb-2">Βιβλιάριο Υγείας Ακινήτου</div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            <label className="block text-xs text-gray-700">
+                              Κουφώματα (έτος)
+                              <input
+                                className="mt-1 w-full border rounded-xl px-2 py-1 text-sm"
+                                value={editWindowsYear}
+                                onChange={(e) => setEditWindowsYear(e.target.value)}
+                                placeholder="2018"
+                              />
+                            </label>
+                            <label className="block text-xs text-gray-700">
+                              A/C (έτος)
+                              <input
+                                className="mt-1 w-full border rounded-xl px-2 py-1 text-sm"
+                                value={editAcYear}
+                                onChange={(e) => setEditAcYear(e.target.value)}
+                                placeholder="2020"
+                              />
+                            </label>
+                            <label className="block text-xs text-gray-700">
+                              Μόνωση ταράτσας (έτος)
+                              <input
+                                className="mt-1 w-full border rounded-xl px-2 py-1 text-sm"
+                                value={editRoofInsulationYear}
+                                onChange={(e) => setEditRoofInsulationYear(e.target.value)}
+                                placeholder="2015"
+                              />
+                            </label>
+                            <label className="block text-xs text-gray-700">
+                              Υδραυλικά (έτος)
+                              <input
+                                className="mt-1 w-full border rounded-xl px-2 py-1 text-sm"
+                                value={editPlumbingYear}
+                                onChange={(e) => setEditPlumbingYear(e.target.value)}
+                                placeholder="2017"
+                              />
+                            </label>
+                            <label className="block text-xs text-gray-700">
+                              Ηλεκτρολογικά (έτος)
+                              <input
+                                className="mt-1 w-full border rounded-xl px-2 py-1 text-sm"
+                                value={editElectricalYear}
+                                onChange={(e) => setEditElectricalYear(e.target.value)}
+                                placeholder="2016"
+                              />
+                            </label>
+                          </div>
+                          <label className="block text-xs text-gray-700 mt-2">
+                            Σημειώσεις
+                            <textarea
+                              className="mt-1 w-full border rounded-xl px-2 py-1 text-sm min-h-[60px]"
+                              value={editHpNotes}
+                              onChange={(e) => setEditHpNotes(e.target.value)}
+                              placeholder="π.χ. αλλαγές, επισκευές, επαναλαμβανόμενα θέματα..."
+                              rows={2}
+                            />
+                          </label>
                         </div>
 
                         {/* Οικονομικά */}

@@ -147,6 +147,17 @@ export type CompatibilityResultV1 = {
   prefsUsed?: any;
 };
 
+export type HealthPassportV1 = {
+  windowsYear?: number;
+  acYear?: number;
+  roofInsulationYear?: number;
+  plumbingYear?: number;
+  electricalYear?: number;
+  notes?: string;
+  updatedAt?: string | null;
+};
+
+
 
 export interface Property {
   _id: string;
@@ -187,6 +198,7 @@ export interface Property {
   createdAt?: string;
   updatedAt?: string;
   balcony?: boolean;
+  healthPassport?: HealthPassportV1;
 }
 
 export type PropertyEventKind = "created" | "updated" | "deleted" | "restored" | "note" | "compatibility";
@@ -220,6 +232,8 @@ export type CreatePayload = {
   parking?: ParkingType;
   elevator?: boolean;
   balcony?: boolean;
+
+  healthPassport?: Omit<HealthPassportV1, "updatedAt">;
 
   furnished?: FurnishedType;
   petsAllowed?: boolean;
