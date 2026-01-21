@@ -136,6 +136,12 @@ const PropertySchema = new mongoose.Schema(
       default: false,
     },
 
+    balcony: {
+      type: Boolean,
+      required: false,
+      default: false,
+    },
+
     // επιπλωμένο
     furnished: {
       type: String,
@@ -150,6 +156,19 @@ const PropertySchema = new mongoose.Schema(
       required: false,
       default: false,
     },
+
+    // ---- ΒΙΒΛΙΑΡΙΟ ΥΓΕΙΑΣ ΑΚΙΝΗΤΟΥ (v1) ----
+    // Owner-declared years for key systems; will power score/timeline later
+    healthPassport: {
+      windowsYear: { type: Number, required: false, min: 1800 },
+      acYear: { type: Number, required: false, min: 1800 },
+      roofInsulationYear: { type: Number, required: false, min: 1800 },
+      plumbingYear: { type: Number, required: false, min: 1800 },
+      electricalYear: { type: Number, required: false, min: 1800 },
+      notes: { type: String, required: false, trim: true, maxlength: 500 },
+      updatedAt: { type: Date, default: null },
+    },
+
 
     tenantPrefs: {
       // Smoking preference
