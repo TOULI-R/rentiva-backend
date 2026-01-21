@@ -1403,7 +1403,7 @@ function Properties() {
 
 
                         {/* Βιβλιάριο Υγείας Ακινήτου (v1) */}
-                        <div className="mt-3 border rounded-2xl p-2">
+                        <div id={`hp-${p._id}`} className="mt-3 border rounded-2xl p-2">
                           <div className="text-xs font-semibold text-gray-800 mb-2">Βιβλιάριο Υγείας Ακινήτου</div>
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                             <label className="block text-xs text-gray-700">
@@ -1677,12 +1677,30 @@ function Properties() {
                           Προβολή
                         </button>
                         {!isDeleted && (
+                          <>
                           <button
                             className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
                             onClick={() => startEdit(p)}
                           >
                             Edit
                           </button>
+                          <button
+                            className="text-sm px-3 py-1.5 rounded-xl border hover:bg-gray-50"
+                            onClick={() => {
+                              startEdit(p);
+                              setTimeout(() => {
+                                const el = document.getElementById(`hp-${p._id}`);
+                                if (el) {
+                                  el.scrollIntoView({ behavior: "smooth", block: "start" });
+                                  const first = el.querySelector("input, textarea, select") as HTMLElement | null;
+                                  if (first) first.focus();
+                                }
+                              }, 80);
+                            }}
+                          >
+                            Βιβλιάριο Υγείας
+                          </button>
+                          </>
                         )}
                         {isDeleted ? (
                           <button
