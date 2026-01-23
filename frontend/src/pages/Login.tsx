@@ -11,22 +11,40 @@ export default function Login() {
   const navigate = useNavigate();
   const notifications = useNotification();
 
-
   const [searchParams] = useSearchParams();
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     setLoading(true);
+
+    const toastId = notifications.notifyLoading("Γίνεται σύνδεση...", {
+      key: "auth:login",
+    });
+
     try {
       await api.login(email, password);
-      notifications.notifySuccess("Συνδεθήκατε επιτυχώς.");
+
+      notifications.updateToast(toastId, {
+        type: "success",
+        message: "Συνδεθήκατε επιτυχώς.",
+        persist: false,
+      });
+
       const next = searchParams.get("next");
-            const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
-            navigate(safeNext || "/", { replace: true });
-} catch (ex: any) {
+      const safeNext =
+        next && next.startsWith("/") && !next.startsWith("//") ? next : null;
+
+      navigate(safeNext || "/", { replace: true });
+    } catch (ex: any) {
       const message = ex?.error || ex?.message || "Η σύνδεση απέτυχε.";
       setErr(message);
-      notifications.notifyError(message);
+
+      notifications.updateToast(toastId, {
+        type: "error",
+        message,
+        persist: false,
+      });
     } finally {
       setLoading(false);
     }
@@ -34,32 +52,56 @@ export default function Login() {
 
   return (
     <div style={{ maxWidth: 420, margin: "60px auto", fontFamily: "system-ui" }}>
-      <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Rentiva</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>
+        Rentiva
+      </h1>
+
       <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
         <label>
           Email
           <input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            style={{ width: "100%", padding: 8, border: "1px solid #ddd", borderRadius: 8 }}
+            style={{
+              width: "100%",
+              padding: 8,
+              border: "1px solid #ddd",
+              borderRadius: 8,
+            }}
             autoComplete="username"
           />
         </label>
+
         <label>
           Password
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={{ width: "100%", padding: 8, border: "1px solid #ddd", borderRadius: 8 }}
+            style={{
+              width: "100%",
+              padding: 8,
+              border: "1px solid #ddd",
+              borderRadius: 8,
+            }}
             autoComplete="current-password"
           />
         </label>
+
         {err && (
-          <div style={{ color: "#b10000", fontSize: 14, background: "#ffecec", padding: 8, borderRadius: 8 }}>
+          <div
+            style={{
+              color: "#b10000",
+              fontSize: 14,
+              background: "#ffecec",
+              padding: 8,
+              borderRadius: 8,
+            }}
+          >
             {err}
           </div>
         )}
+
         <button
           type="submit"
           disabled={loading || !email || !password}
@@ -69,7 +111,7 @@ export default function Login() {
             border: "1px solid #111",
             background: "#111",
             color: "#fff",
-            cursor: loading ? "not-allowed" : "pointer"
+            cursor: loading ? "not-allowed" : "pointer",
           }}
         >
           {loading ? "Σύνδεση..." : "Σύνδεση"}

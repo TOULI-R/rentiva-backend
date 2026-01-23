@@ -17,7 +17,7 @@ function formatNumber(n: number | undefined | null): string {
 }
 
 function Properties() {
-  const { notifyError, notifySuccess } = useNotification();
+  const { notifyError, notifyLoading, updateToast } = useNotification();
   const navigate = useNavigate();
 
   // data
@@ -307,7 +307,9 @@ function Properties() {
     if (newHpNotes.trim()) hp.notes = newHpNotes.trim();
     if (Object.keys(hp).length) payload.healthPassport = hp;
 
-    try {
+      const toastId = notifyLoading("Δημιουργία ακινήτου...", { key: "prop:create" });
+
+      try {
       await api.createProperty(payload);
       // καθαρισμός
       setNewTitle("");
@@ -342,31 +344,35 @@ function Properties() {
 
       setPage(1);
       await fetchList();
-      notifySuccess("Το ακίνητο δημιουργήθηκε με επιτυχία.");
+      updateToast(toastId, { type: "success", message: "Το ακίνητο δημιουργήθηκε με επιτυχία.", persist: false });
     } catch (e: any) {
-      notifyError(e?.message || "Αποτυχία δημιουργίας.");
+      updateToast(toastId, { type: "error", message: e?.message || "Αποτυχία δημιουργίας.", persist: false });
     }
   };
 
   // ---------- Delete / Restore ----------
-  const onDelete = async (id: string) => {
+  
+const onDelete = async (id: string) => {
     if (!confirm("Να γίνει soft delete;")) return;
+    const toastId = notifyLoading("Διαγραφή ακινήτου...", { key: "prop:delete:" + id });
     try {
       await api.delProperty(id);
       await fetchList();
-      notifySuccess("Το ακίνητο διαγράφηκε (soft delete).");
+      updateToast(toastId, { type: "success", message: "Το ακίνητο διαγράφηκε (soft delete).", persist: false });
     } catch (e: any) {
-      notifyError(e?.message || "Αποτυχία διαγραφής.");
+      updateToast(toastId, { type: "error", message: e?.message || "Αποτυχία διαγραφής.", persist: false });
     }
   };
 
-  const onRestore = async (id: string) => {
+  
+const onRestore = async (id: string) => {
+    const toastId = notifyLoading("Επαναφορά ακινήτου...", { key: "prop:restore:" + id });
     try {
       await api.restoreProperty(id);
       await fetchList();
-      notifySuccess("Το ακίνητο επανήλθε.");
+      updateToast(toastId, { type: "success", message: "Το ακίνητο επανήλθε.", persist: false });
     } catch (e: any) {
-      notifyError(e?.message || "Αποτυχία restore.");
+      updateToast(toastId, { type: "error", message: e?.message || "Αποτυχία restore.", persist: false });
     }
   };
 
@@ -651,13 +657,16 @@ function Properties() {
     payload.petsAllowed = editPetsAllowed;
     payload.billsIncluded = editBillsIncluded;
 
+    
+const toastId = notifyLoading("Αποθήκευση αλλαγών...", { key: "prop:update:" + editingId });
+
     try {
       await api.updateProperty(editingId, payload);
       cancelEdit();
       await fetchList();
-      notifySuccess("Το ακίνητο ενημερώθηκε με επιτυχία.");
+      updateToast(toastId, { type: "success", message: "Το ακίνητο ενημερώθηκε με επιτυχία.", persist: false });
     } catch (e: any) {
-      notifyError(e?.message || "Αποτυχία ενημέρωσης.");
+      updateToast(toastId, { type: "error", message: e?.message || "Αποτυχία ενημέρωσης.", persist: false });
     }
   };
 
