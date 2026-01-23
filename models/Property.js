@@ -142,6 +142,13 @@ const PropertySchema = new mongoose.Schema(
       default: false,
     },
 
+    isPublished: {
+      type: Boolean,
+      required: false,
+      default: false,
+      index: true,
+    },
+
     // επιπλωμένο
     furnished: {
       type: String,

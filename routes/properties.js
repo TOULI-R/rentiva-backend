@@ -451,6 +451,11 @@ router.patch('/:id', validateObjectIdParam('id'), async (req, res, next) => {
       updates.balcony = req.body.balcony;
     }
 
+
+      if (typeof req.body.isPublished === 'boolean') {
+        updates.isPublished = req.body.isPublished;
+      }
+
     // Βιβλιάριο Υγείας Ακινήτου (v1)
     const hp = req.body.healthPassport;
     let hpChanged = false;

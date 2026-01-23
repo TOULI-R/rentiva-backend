@@ -198,7 +198,9 @@ export interface Property {
   createdAt?: string;
   updatedAt?: string;
   balcony?: boolean;
-  healthPassport?: HealthPassportV1;
+  
+  isPublished?: boolean;
+healthPassport?: HealthPassportV1;
 }
 
 export type PropertyEventKind = "created" | "updated" | "deleted" | "restored" | "note" | "compatibility";
@@ -351,6 +353,14 @@ async function updateProperty(id: string, payload: Partial<CreatePayload>) {
   });
 }
 
+
+async function setPublished(id: string, isPublished: boolean) {
+  return request("/properties/" + id, {
+    method: "PATCH",
+    body: JSON.stringify({ isPublished }),
+  });
+}
+
   async function updateTenantPrefs(id: string, payload: TenantPrefsV1) {
     return request<{ tenantPrefs: TenantPrefsV1 }>("/properties/" + id + "/tenant-prefs", {
       method: "PATCH",
@@ -405,6 +415,7 @@ async function updateProperty(id: string, payload: Partial<CreatePayload>) {
   delProperty,
   restoreProperty,
   updateProperty,
+  setPublished,
   updateTenantPrefs,
   checkCompatibility,
   getShareKey,
