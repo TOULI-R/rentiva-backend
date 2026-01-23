@@ -8,7 +8,7 @@ import Properties from "./pages/Properties";
 import PropertyDetails from "./pages/PropertyDetails";
 import ChooseRole from "./pages/ChooseRolePage";
 import TenantHome from "./pages/TenantHomePage";
-
+import TenantSearch from "./pages/TenantSearchPage";
 import api, { storage, type UserRole } from "./lib/api";
 import { NotificationProvider } from "./lib/notifications";
 
@@ -169,7 +169,11 @@ export default function App() {
           <Route path="/login" element={token ? <PostLoginRedirect /> : <Login />} />
 
           {/* Public compatibility page */}
+
           <Route path="/tairiazoume/:shareKey" element={<PublicCompatibility />} />
+
+            {/* Public listings search */}
+            <Route path="/search" element={<TenantSearch />} />
 
           {/* Role chooser */}
           <Route
