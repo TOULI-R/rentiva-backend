@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 
+import Welcome from "./pages/WelcomePage";
 import PublicCompatibility from "./pages/PublicCompatibilityPage";
 import Login from "./pages/Login";
 import Properties from "./pages/Properties";
@@ -163,7 +164,8 @@ export default function App() {
     <NotificationProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<PostLoginRedirect />} />
+          <Route path="/" element={<Welcome />} />
+          <Route path="/go" element={<PostLoginRedirect />} />
           <Route path="/login" element={token ? <PostLoginRedirect /> : <Login />} />
 
           {/* Public compatibility page */}
